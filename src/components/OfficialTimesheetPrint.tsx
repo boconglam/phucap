@@ -1,6 +1,6 @@
 import React from 'react';
 import type { TimesheetRecord } from '../types';
-import { formatVND, getLastDayOfMonth } from '../utils/calculations';
+import { formatVND, getDeclarationDate } from '../utils/calculations';
 
 interface OfficialTimesheetPrintProps {
   timesheet: TimesheetRecord;
@@ -11,7 +11,9 @@ export const OfficialTimesheetPrint: React.FC<OfficialTimesheetPrintProps> = ({
   timesheet,
   sheetRef,
 }) => {
-  const signDay = timesheet.signDay || getLastDayOfMonth(timesheet.month, timesheet.year);
+  const declDate = getDeclarationDate(timesheet.month, timesheet.year, timesheet.weeks);
+  const declDayStr = String(declDate.day).padStart(2, '0');
+  const declMonthStr = String(declDate.month).padStart(2, '0');
   const classesLabel = timesheet.classes.join(', ');
 
   return (
@@ -211,8 +213,8 @@ export const OfficialTimesheetPrint: React.FC<OfficialTimesheetPrintProps> = ({
         </div>
         <div>
           <div className="italic">
-            {timesheet.locationName || 'Châu Hưng'}, ngày {signDay} tháng {timesheet.month} năm{' '}
-            {timesheet.year}
+            {timesheet.locationName || 'Châu Hưng'}, ngày {declDayStr} tháng {declMonthStr} năm{' '}
+            {declDate.year}
           </div>
           <div className="font-bold uppercase">NGƯỜI KÊ KHAI</div>
           <div className="h-20" />

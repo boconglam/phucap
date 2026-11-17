@@ -2,7 +2,7 @@ import html2canvas from 'html2canvas-pro';
 import { jsPDF } from 'jspdf';
 import * as XLSX from 'xlsx';
 import type { PersonnelMember, SubjectType, SystemSettings, TimesheetRecord, UserRole } from '../types';
-import { createSafeId, parseClassesString } from './calculations';
+import { createSafeId, getDeclarationDate, parseClassesString } from './calculations';
 
 export async function exportElementToPDF(element: HTMLElement, fileName: string): Promise<void> {
   const canvas = await html2canvas(element, {
@@ -84,6 +84,7 @@ export function exportTimesheetToExcel(ts: TimesheetRecord): void {
     '',
     '',
   ]);
+  const declDate = getDeclarationDate(ts.month, ts.year, ts.weeks);
   rows.push([]);
   rows.push([
     'DUYỆT CỦA LÃNH ĐẠO',
@@ -92,7 +93,7 @@ export function exportTimesheetToExcel(ts: TimesheetRecord): void {
     'TỔ TRƯỞNG',
     '',
     '',
-    `${ts.locationName || 'Châu Hưng'}, ngày ${ts.signDay || 31} tháng ${ts.month} năm ${ts.year}`,
+    `${ts.locationName || 'Châu Hưng'}, ngày ${String(declDate.day).padStart(2, '0')} tháng ${String(declDate.month).padStart(2, '0')} năm ${declDate.year}`,
   ]);
   rows.push(['PHÓ HIỆU TRƯỞNG', '', '', '', '', '', 'NGƯỜI KÊ KHAI']);
   rows.push([]);

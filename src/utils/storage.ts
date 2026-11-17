@@ -163,6 +163,10 @@ export async function loadLocalAccounts(): Promise<LocalAccountCredential[]> {
   }
 }
 
+export async function saveLocalAccountsList(list: LocalAccountCredential[]): Promise<void> {
+  await idbReplaceAll(STORES.ACCOUNTS, list);
+}
+
 export async function saveLocalAccount(account: LocalAccountCredential): Promise<void> {
   await idbPut(STORES.ACCOUNTS, account);
 }

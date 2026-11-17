@@ -23,15 +23,18 @@ import {
   saveUserProfileCloud,
 } from './services/firestoreSync';
 import type {
+  LocalAccountCredential,
   LocalBackupSnapshot,
   PersonnelMember,
   SystemSettings,
   TimesheetRecord,
   UserProfile,
+  UserRole,
 } from './types';
 import { BOOTSTRAPPED_ADMIN_EMAIL, DEFAULT_SETTINGS } from './utils/calculations';
 import {
   createLocalBackupSnapshot,
+  deleteLocalAccount,
   deleteLocalPersonnel,
   deleteLocalTimesheet,
   generateSalt,
@@ -60,6 +63,7 @@ export default function App() {
 
   const [settings, setSettings] = useState<SystemSettings>(DEFAULT_SETTINGS);
   const [personnel, setPersonnel] = useState<PersonnelMember[]>([]);
+  const [localAccounts, setLocalAccounts] = useState<LocalAccountCredential[]>([]);
   const [timesheets, setTimesheets] = useState<TimesheetRecord[]>([]);
   const [backups, setBackups] = useState<LocalBackupSnapshot[]>([]);
 
@@ -75,16 +79,18 @@ export default function App() {
 
   // Load local offline data on mount
   const loadLocalCache = useCallback(async () => {
-    const [locSettings, locPersonnel, locTimesheets, locBackups] = await Promise.all([
+    const [locSettings, locPersonnel, locTimesheets, locBackups, locAccounts] = await Promise.all([
       loadLocalSettings(),
       loadLocalPersonnel(),
       loadLocalTimesheets(),
       loadLocalBackups(),
+      loadLocalAccounts(),
     ]);
     setSettings(locSettings);
     setPersonnel(locPersonnel);
     setTimesheets(locTimesheets);
     setBackups(locBackups);
+    setLocalAccounts(locAccounts);
     return { locSettings, locPersonnel, locTimesheets };
   }, []);
 
@@ -381,28 +387,75 @@ export default function App() {
   };
 
   const handleSaveMember = async (member: PersonnelMember, newPassword?: string) => {
-    await upsertLocalPersonnel(member);
-    if (member.username && newPassword) {
-      const salt = generateSalt();
-      const passwordHash = await hashPassword(newPassword, salt);
-      await saveLocalAccount({
-        username: member.username,
-        passwordHash,
-        salt,
-        staffId: member.id,
-        email: member.email,
-        fullName: member.fullName,
-        role: member.role,
-        department: member.department,
-      });
+    const existingMember = personnel.find((p) => p.id === member.id);
+    const existingAcc = localAccounts.find(
+      (a) => a.staffId === member.id || (existingMember?.username && a.username === existingMember.username)
+    );
+
+    const cleanUsername = member.username?.trim() || '';
+    const updatedMember: PersonnelMember = {
+      ...member,
+      username: cleanUsername || undefined,
+    };
+
+    await upsertLocalPersonnel(updatedMember);
+
+    let nextAccounts = [...localAccounts];
+    if (cleanUsername) {
+      if (newPassword) {
+        if (existingAcc && existingAcc.username !== cleanUsername) {
+          await deleteLocalAccount(existingAcc.username);
+          nextAccounts = nextAccounts.filter((a) => a.username !== existingAcc.username);
+        }
+        const salt = generateSalt();
+        const passwordHash = await hashPassword(newPassword, salt);
+        const acc: LocalAccountCredential = {
+          username: cleanUsername,
+          passwordHash,
+          salt,
+          staffId: updatedMember.id,
+          email: updatedMember.email,
+          fullName: updatedMember.fullName,
+          role: updatedMember.role,
+          department: updatedMember.department,
+        };
+        await saveLocalAccount(acc);
+        nextAccounts = [...nextAccounts.filter((a) => a.username !== cleanUsername), acc];
+      } else if (existingAcc) {
+        if (existingAcc.username !== cleanUsername) {
+          await deleteLocalAccount(existingAcc.username);
+          nextAccounts = nextAccounts.filter((a) => a.username !== existingAcc.username);
+        }
+        const acc: LocalAccountCredential = {
+          ...existingAcc,
+          username: cleanUsername,
+          email: updatedMember.email,
+          fullName: updatedMember.fullName,
+          role: updatedMember.role,
+          department: updatedMember.department,
+        };
+        await saveLocalAccount(acc);
+        nextAccounts = [...nextAccounts.filter((a) => a.username !== cleanUsername), acc];
+      }
+    } else if (existingAcc) {
+      await deleteLocalAccount(existingAcc.username);
+      nextAccounts = nextAccounts.filter((a) => a.username !== existingAcc.username);
     }
-    const nextList = personnel.some((p) => p.id === member.id)
-      ? personnel.map((p) => (p.id === member.id ? member : p))
-      : [...personnel, member];
+
+    setLocalAccounts(nextAccounts);
+
+    const nextList = personnel.some((p) => p.id === updatedMember.id)
+      ? personnel.map((p) => (p.id === updatedMember.id ? updatedMember : p))
+      : [...personnel, updatedMember];
     setPersonnel(nextList);
-    await recordBackupSnapshot(`Cập nhật nhân sự ${member.fullName}`, settings, nextList, timesheets);
+    await recordBackupSnapshot(
+      `Cập nhật nhân sự ${updatedMember.fullName}`,
+      settings,
+      nextList,
+      timesheets
+    );
     if (user?.authMode === 'google' && navigator.onLine) {
-      await savePersonnelCloud(member);
+      await savePersonnelCloud(updatedMember);
     }
   };
 
@@ -436,6 +489,7 @@ export default function App() {
     }
     await saveLocalPersonnelList(merged);
     setPersonnel(merged);
+    setLocalAccounts(await loadLocalAccounts());
     await recordBackupSnapshot(`Nhập Excel ${items.length} nhân sự`, settings, merged, timesheets);
     if (user?.authMode === 'google' && navigator.onLine) {
       for (const item of merged) {
@@ -446,10 +500,151 @@ export default function App() {
 
   const handleDeleteMember = async (id: string) => {
     await deleteLocalPersonnel(id);
+    const linkedAccounts = localAccounts.filter((a) => a.staffId === id);
+    for (const acc of linkedAccounts) {
+      await deleteLocalAccount(acc.username);
+    }
+    setLocalAccounts(localAccounts.filter((a) => a.staffId !== id));
     const nextList = personnel.filter((p) => p.id !== id);
     setPersonnel(nextList);
     if (user?.authMode === 'google' && navigator.onLine) {
       await deletePersonnelCloud(id);
+    }
+  };
+
+  const handleUpsertAccount = async (params: {
+    oldUsername?: string;
+    username: string;
+    password?: string;
+    staffId?: string;
+    email: string;
+    fullName: string;
+    role: UserRole;
+    department: string;
+  }) => {
+    const cleanUsername = params.username.trim();
+    if (!cleanUsername) throw new Error('Tên đăng nhập không được để trống.');
+
+    const conflict = localAccounts.find(
+      (a) =>
+        a.username.toLowerCase() === cleanUsername.toLowerCase() &&
+        a.username.toLowerCase() !== (params.oldUsername || '').toLowerCase()
+    );
+    if (conflict) {
+      throw new Error(`Tên đăng nhập "${cleanUsername}" đã tồn tại.`);
+    }
+
+    const existingAcc = params.oldUsername
+      ? localAccounts.find((a) => a.username === params.oldUsername)
+      : undefined;
+
+    if (!existingAcc && !params.password) {
+      throw new Error('Vui lòng nhập mật khẩu cho tài khoản mới.');
+    }
+
+    let passwordHash = existingAcc?.passwordHash || '';
+    let salt = existingAcc?.salt || '';
+    if (params.password) {
+      salt = generateSalt();
+      passwordHash = await hashPassword(params.password, salt);
+    }
+
+    // Find or create linked PersonnelMember
+    let targetStaff = personnel.find(
+      (p) =>
+        (params.staffId && p.id === params.staffId) ||
+        (params.email && p.email.toLowerCase() === params.email.toLowerCase())
+    );
+    const now = new Date().toISOString();
+    if (!targetStaff) {
+      targetStaff = {
+        id: params.staffId || `staff_${Date.now()}`,
+        fullName: params.fullName.trim(),
+        email: params.email.trim().toLowerCase() || `${cleanUsername}@school.local`,
+        username: cleanUsername,
+        role: params.role,
+        position:
+          params.role === 'admin'
+            ? 'Quản trị viên'
+            : params.role === 'leader'
+              ? 'Tổ trưởng chuyên môn'
+              : 'Giáo viên',
+        department: params.department.trim() || 'Tổ Thể dục - QP&AN',
+        schoolName: settings.schoolName,
+        subject: 'Giáo dục Thể chất',
+        concurrentRole: '',
+        classes: [],
+        ratePerPeriod: settings.defaultRatePerPeriod,
+        isActive: true,
+        createdAt: now,
+        updatedAt: now,
+      };
+    } else {
+      targetStaff = {
+        ...targetStaff,
+        fullName: params.fullName.trim() || targetStaff.fullName,
+        email: params.email.trim().toLowerCase() || targetStaff.email,
+        username: cleanUsername,
+        role: params.role,
+        department: params.department.trim() || targetStaff.department,
+        updatedAt: now,
+      };
+    }
+
+    await upsertLocalPersonnel(targetStaff);
+    const nextPersonnel = personnel.some((p) => p.id === targetStaff!.id)
+      ? personnel.map((p) => (p.id === targetStaff!.id ? targetStaff! : p))
+      : [...personnel, targetStaff];
+    setPersonnel(nextPersonnel);
+
+    if (params.oldUsername && params.oldUsername !== cleanUsername) {
+      await deleteLocalAccount(params.oldUsername);
+    }
+
+    const newAcc: LocalAccountCredential = {
+      username: cleanUsername,
+      passwordHash,
+      salt,
+      staffId: targetStaff.id,
+      email: targetStaff.email,
+      fullName: targetStaff.fullName,
+      role: targetStaff.role,
+      department: targetStaff.department,
+    };
+    await saveLocalAccount(newAcc);
+
+    const nextAccounts = [
+      ...localAccounts.filter(
+        (a) => a.username !== params.oldUsername && a.username !== cleanUsername
+      ),
+      newAcc,
+    ];
+    setLocalAccounts(nextAccounts);
+    await recordBackupSnapshot(`Cập nhật tài khoản ${cleanUsername}`, settings, nextPersonnel, timesheets);
+    if (user?.authMode === 'google' && navigator.onLine) {
+      await savePersonnelCloud(targetStaff);
+    }
+  };
+
+  const handleDeleteAccount = async (username: string) => {
+    const acc = localAccounts.find((a) => a.username === username);
+    await deleteLocalAccount(username);
+    setLocalAccounts(localAccounts.filter((a) => a.username !== username));
+
+    if (acc) {
+      const targetStaff = personnel.find((p) => p.id === acc.staffId);
+      if (targetStaff) {
+        const updatedStaff: PersonnelMember = {
+          ...targetStaff,
+          username: undefined,
+          updatedAt: new Date().toISOString(),
+        };
+        await upsertLocalPersonnel(updatedStaff);
+        setPersonnel(personnel.map((p) => (p.id === updatedStaff.id ? updatedStaff : p)));
+        if (user?.authMode === 'google' && navigator.onLine) {
+          await savePersonnelCloud(updatedStaff);
+        }
+      }
     }
   };
 
@@ -676,9 +871,12 @@ export default function App() {
             user={user}
             settings={settings}
             personnel={personnel}
+            localAccounts={localAccounts}
             onSaveMember={handleSaveMember}
             onBulkImport={handleBulkImportPersonnel}
             onDeleteMember={handleDeleteMember}
+            onUpsertAccount={handleUpsertAccount}
+            onDeleteAccount={handleDeleteAccount}
           />
         )}
 

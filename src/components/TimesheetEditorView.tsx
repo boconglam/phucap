@@ -23,6 +23,7 @@ import {
   createSafeId,
   formatVND,
   generateWeeksForMonth,
+  getDeclarationDate,
   getLastDayOfMonth,
   getPeriodsPerClass,
   parseClassesString,
@@ -249,8 +250,10 @@ export const TimesheetEditorView: React.FC<TimesheetEditorViewProps> = ({
     setIsSaving(true);
     setFeedback(null);
     try {
+      const declDate = getDeclarationDate(draft.month, draft.year, draft.weeks);
       const toSave = recalculateTimesheet({
         ...draft,
+        signDay: declDate.day,
         status: nextStatus ?? draft.status,
         updatedAt: new Date().toISOString(),
       });
@@ -544,8 +547,12 @@ export const TimesheetEditorView: React.FC<TimesheetEditorViewProps> = ({
             <h2 className="text-sm font-semibold text-slate-900">
               Chi tiết số tiết thực dạy theo tuần
             </h2>
-            <p className="text-xs text-slate-500 mt-0.5">
-              Khai giảng: {settings.schoolYearStart} · Vào học sau Tết: {settings.tetReturnDate}
+            <p className="text-xs text-slate-500 mt-0.5 tabular-nums">
+              {(() => {
+                const d = getDeclarationDate(draft.month, draft.year, draft.weeks);
+                const dStr = `${String(d.day).padStart(2, '0')}/${String(d.month).padStart(2, '0')}/${d.year}`;
+                return `Ngày kê khai: ${dStr} · Khai giảng: ${settings.schoolYearStart} · Sau Tết: ${settings.tetReturnDate}`;
+              })()}
             </p>
           </div>
           <button

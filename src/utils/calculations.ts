@@ -48,6 +48,40 @@ export function getLastDayOfMonth(month: number, year: number): number {
   return new Date(year, month, 0).getDate();
 }
 
+export function parseDateVN(dateStr: string): Date | null {
+  if (!dateStr || !/^\d{1,2}\/\d{1,2}\/\d{4}$/.test(dateStr.trim())) return null;
+  const [d, m, y] = dateStr.trim().split('/').map(Number);
+  return new Date(y, m - 1, d);
+}
+
+export function getDeclarationDate(
+  month: number,
+  year: number,
+  weeks: WeekEntry[]
+): { day: number; month: number; year: number } {
+  const lastDay = getLastDayOfMonth(month, year);
+  const lastDayOfMonthDate = new Date(year, month - 1, lastDay);
+
+  let latestWeekEndDate: Date | null = null;
+  for (const w of weeks) {
+    const parsedEnd = parseDateVN(w.endDate);
+    if (parsedEnd && (!latestWeekEndDate || parsedEnd > latestWeekEndDate)) {
+      latestWeekEndDate = parsedEnd;
+    }
+  }
+
+  const chosenDate =
+    latestWeekEndDate && latestWeekEndDate > lastDayOfMonthDate
+      ? latestWeekEndDate
+      : lastDayOfMonthDate;
+
+  return {
+    day: chosenDate.getDate(),
+    month: chosenDate.getMonth() + 1,
+    year: chosenDate.getFullYear(),
+  };
+}
+
 export function generateWeeksForMonth(
   month: number,
   year: number,
