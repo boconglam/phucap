@@ -602,7 +602,7 @@ export const PersonnelView: React.FC<PersonnelViewProps> = ({
                     <th className="py-3 px-4">Email liên kết</th>
                     <th className="py-3 px-4">Tổ chuyên môn</th>
                     <th className="py-3 px-4">Quyền hạn</th>
-                    <th className="py-3 px-4">Bảo mật mật khẩu</th>
+                    <th className="py-3 px-4">Trạng thái đồng bộ</th>
                     <th className="py-3 px-4 text-right">Thao tác</th>
                   </tr>
                 </thead>
@@ -618,8 +618,12 @@ export const PersonnelView: React.FC<PersonnelViewProps> = ({
                       <td className="py-3 px-4 text-xs font-medium text-slate-700">
                         {ROLE_LABELS[acc.role]}
                       </td>
-                      <td className="py-3 px-4 text-xs text-emerald-800">
-                        Đã mã hóa SHA-256
+                      <td className="py-3 px-4 text-xs">
+                        {acc.credentialKey ? (
+                          <span className="text-emerald-800">Đa thiết bị · Đã đồng bộ</span>
+                        ) : (
+                          <span className="text-amber-700">Chỉ trên máy này · Đặt lại MK để đồng bộ</span>
+                        )}
                       </td>
                       <td className="py-3 px-4 text-right whitespace-nowrap">
                         <button

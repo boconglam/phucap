@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Lock, LogIn, ShieldCheck, UserCheck, Wifi, WifiOff } from 'lucide-react';
+import { Eye, EyeOff, Lock, LogIn, ShieldCheck, UserCheck, Wifi, WifiOff } from 'lucide-react';
 import { useOnlineStatus } from '../hooks/useOnlineStatus';
 import { PWAInstallButton } from './PWAInstallButton';
 
@@ -24,6 +24,7 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({
   const [mode, setMode] = useState<'google' | 'local'>('google');
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
 
   const handleLocalSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -161,19 +162,21 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({
                   <h2 className="text-base font-semibold text-slate-900">
                     Đăng nhập tài khoản nội bộ
                   </h2>
-                  <p className="mt-1 text-xs text-slate-500">
-                    Sử dụng tên đăng nhập và mật khẩu đã được Quản trị viên cấp trong danh sách nhân
-                    sự (hoạt động cả khi ngoại tuyến).
+                  <p className="mt-1 text-xs text-slate-500 leading-relaxed">
+                    Sử dụng tên đăng nhập và mật khẩu do Quản trị viên cấp. Hỗ trợ đăng nhập trên
+                    mọi thiết bị khi có mạng và tiếp tục sử dụng ngoại tuyến sau khi đã lưu.
                   </p>
                 </div>
 
                 <div>
                   <label className="block text-xs font-medium text-slate-700 mb-1.5">
-                    Tên đăng nhập hoặc Email
+                    Tên đăng nhập nội bộ
                   </label>
                   <input
                     type="text"
                     required
+                    autoCapitalize="none"
+                    autoCorrect="off"
                     value={username}
                     onChange={(e) => setUsername(e.target.value)}
                     placeholder="Ví dụ: hieunt"
@@ -185,14 +188,28 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({
                   <label className="block text-xs font-medium text-slate-700 mb-1.5">
                     Mật khẩu
                   </label>
-                  <input
-                    type="password"
-                    required
-                    value={password}
-                    onChange={(e) => setPassword(e.target.value)}
-                    placeholder="Nhập mật khẩu"
-                    className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-emerald-700 focus:border-emerald-700"
-                  />
+                  <div className="relative">
+                    <input
+                      type={showPassword ? 'text' : 'password'}
+                      required
+                      value={password}
+                      onChange={(e) => setPassword(e.target.value)}
+                      placeholder="Nhập mật khẩu được cấp"
+                      className="w-full rounded-lg border border-slate-300 pl-3 pr-10 py-2 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-emerald-700 focus:border-emerald-700"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowPassword((prev) => !prev)}
+                      aria-label={showPassword ? 'Ẩn mật khẩu' : 'Hiện mật khẩu'}
+                      className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-700 p-1 cursor-pointer"
+                    >
+                      {showPassword ? (
+                        <EyeOff className="w-4 h-4" />
+                      ) : (
+                        <Eye className="w-4 h-4" />
+                      )}
+                    </button>
+                  </div>
                 </div>
 
                 <button

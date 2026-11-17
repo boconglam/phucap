@@ -7,6 +7,8 @@
    - `personnel/{staffId}` can only be created, updated, or deleted by Admins. Teachers can only read their own matched record (`email == request.auth.token.email` or `linkedUid == request.auth.uid`).
    - `timesheets/{timesheetId}` must always bind `ownerUid` to the authenticated creator (unless Admin). Approved timesheets (`status == 'approved'`) are terminally locked against non-Admin modification or deletion.
    - `system_settings/{schoolId}` can only be modified by Admins; readable by verified signed-in users.
+   - `internal_accounts/{accountId}` can only be read, listed, created, updated, or deleted by Admins.
+   - `auth_tickets/{credentialKey}` forbids `list` (`allow list: if false`) and restricts writes strictly to Admins; single-document `get` requires a 64-character SHA-256 capability token derived from both username and password.
 3. **Temporal & Schema Integrity**: Every document must conform to strict key allowlists (`hasAll` + `hasOnly`), string length bounds, bounded list sizes, and server-side `request.time` timestamps.
 
 ## 2. Dirty Dozen Attack Payloads (Expected: PERMISSION_DENIED)
@@ -21,4 +23,4 @@
 9. **Terminal State Bypass**: Teacher updating `timesheets/{id}` when existing `status == 'approved'`.
 10. **Client Timestamp Forgery**: Creating `timesheets/{id}` with backdated `createdAt` != `request.time`.
 11. **Unbounded Array / DoW Payload**: Creating `timesheets/{id}` with 500 entries in `classes` or `weeks`.
-12. **PII Cross-User Scraping**: Teacher A listing or reading `users/{teacher_B_uid}` or `personnel` belonging to Teacher B.
+12. **PII Cross-User Scraping / Ticket Enumeration**: Teacher A listing `users`, `personnel`, `internal_accounts`, or `auth_tickets`.

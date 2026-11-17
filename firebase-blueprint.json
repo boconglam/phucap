@@ -110,6 +110,57 @@
         "createdAt": { "type": "string", "format": "date-time" }
       },
       "required": ["uid", "email", "createdAt"]
+    },
+    "InternalAccount": {
+      "title": "InternalAccount",
+      "description": "Danh bạ tài khoản nội bộ do quản trị viên cấp (chỉ quản trị viên truy cập).",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "minLength": 64, "maxLength": 64, "pattern": "^[a-f0-9]{64}$" },
+        "username": { "type": "string", "minLength": 1, "maxLength": 80 },
+        "credentialKey": { "type": "string", "minLength": 64, "maxLength": 64, "pattern": "^[a-f0-9]{64}$" },
+        "passwordHash": { "type": "string", "minLength": 16, "maxLength": 128 },
+        "salt": { "type": "string", "minLength": 8, "maxLength": 64 },
+        "staffId": { "type": "string", "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "email": { "type": "string", "maxLength": 150 },
+        "fullName": { "type": "string", "minLength": 1, "maxLength": 120 },
+        "role": { "type": "string", "enum": ["admin", "leader", "teacher"] },
+        "department": { "type": "string", "maxLength": 120 },
+        "isActive": { "type": "boolean" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "username", "credentialKey", "passwordHash", "salt", "staffId", "email", "fullName", "role", "department", "isActive", "updatedAt"]
+    },
+    "AuthTicket": {
+      "title": "AuthTicket",
+      "description": "Phiếu xác thực tài khoản nội bộ khóa theo băm SHA-256 của tên đăng nhập và mật khẩu.",
+      "type": "object",
+      "properties": {
+        "credentialKey": { "type": "string", "minLength": 64, "maxLength": 64, "pattern": "^[a-f0-9]{64}$" },
+        "username": { "type": "string", "minLength": 1, "maxLength": 80 },
+        "staffId": { "type": "string", "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "email": { "type": "string", "maxLength": 150 },
+        "fullName": { "type": "string", "minLength": 1, "maxLength": 120 },
+        "role": { "type": "string", "enum": ["admin", "leader", "teacher"] },
+        "position": { "type": "string", "maxLength": 100 },
+        "department": { "type": "string", "maxLength": 120 },
+        "schoolName": { "type": "string", "maxLength": 200 },
+        "subject": { "type": "string", "enum": ["Giáo dục Thể chất", "Giáo dục Quốc phòng An ninh"] },
+        "concurrentRole": { "type": "string", "maxLength": 150 },
+        "classes": { "type": "array" },
+        "ratePerPeriod": { "type": "number" },
+        "agencyName": { "type": "string", "maxLength": 200 },
+        "locationName": { "type": "string", "maxLength": 100 },
+        "vicePrincipalName": { "type": "string", "maxLength": 100 },
+        "departmentHeadName": { "type": "string", "maxLength": 100 },
+        "defaultRatePerPeriod": { "type": "number" },
+        "schoolYearStart": { "type": "string", "maxLength": 20 },
+        "tetReturnDate": { "type": "string", "maxLength": 20 },
+        "reminderDayOfMonth": { "type": "number" },
+        "isActive": { "type": "boolean" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["credentialKey", "username", "staffId", "email", "fullName", "role", "position", "department", "schoolName", "subject", "classes", "ratePerPeriod", "agencyName", "locationName", "defaultRatePerPeriod", "schoolYearStart", "tetReturnDate", "reminderDayOfMonth", "isActive", "updatedAt"]
     }
   },
   "firestore": {
@@ -132,6 +183,14 @@
     "/admins/{adminId}": {
       "schema": { "$ref": "#/entities/AdminMarker" },
       "description": "Danh sách UID quản trị viên hệ thống."
+    },
+    "/internal_accounts/{accountId}": {
+      "schema": { "$ref": "#/entities/InternalAccount" },
+      "description": "Danh sách tài khoản nội bộ để quản trị viên đồng bộ và thu hồi."
+    },
+    "/auth_tickets/{credentialKey}": {
+      "schema": { "$ref": "#/entities/AuthTicket" },
+      "description": "Phiếu xác thực tài khoản nội bộ đa thiết bị khóa bằng SHA-256(username + password)."
     }
   }
 }

@@ -12,8 +12,16 @@ import {
   where,
 } from 'firebase/firestore';
 import { auth, db, handleFirestoreError, OperationType } from '../firebase';
-import type { PersonnelMember, SystemSettings, TimesheetRecord, UserProfile } from '../types';
+import type {
+  AuthTicketPayload,
+  LocalAccountCredential,
+  PersonnelMember,
+  SystemSettings,
+  TimesheetRecord,
+  UserProfile,
+} from '../types';
 import { BOOTSTRAPPED_ADMIN_EMAIL, DEFAULT_SETTINGS } from '../utils/calculations';
+import { computeAccountDocId } from '../utils/storage';
 
 function tsToIso(val: unknown): string {
   if (val instanceof Timestamp) {
@@ -349,5 +357,180 @@ export async function deleteTimesheetCloud(id: string): Promise<void> {
     await deleteDoc(doc(db, 'timesheets', id));
   } catch (error) {
     handleFirestoreError(error, OperationType.DELETE, path);
+  }
+}
+
+export async function fetchInternalAccountsCloud(): Promise<LocalAccountCredential[]> {
+  if (!auth.currentUser) return [];
+  const path = 'internal_accounts';
+  try {
+    const snap = await getDocs(collection(db, 'internal_accounts'));
+    const list: LocalAccountCredential[] = [];
+    snap.forEach((docSnap) => {
+      const d = docSnap.data();
+      list.push({
+        username: String(d.username || ''),
+        passwordHash: String(d.passwordHash || ''),
+        salt: String(d.salt || ''),
+        credentialKey: d.credentialKey ? String(d.credentialKey) : undefined,
+        staffId: String(d.staffId || ''),
+        email: String(d.email || ''),
+        fullName: String(d.fullName || ''),
+        role: (d.role as LocalAccountCredential['role']) || 'teacher',
+        department: String(d.department || ''),
+        isActive: d.isActive !== undefined ? Boolean(d.isActive) : true,
+      });
+    });
+    return list;
+  } catch (error) {
+    handleFirestoreError(error, OperationType.LIST, path);
+  }
+}
+
+export async function saveInternalAccountAndTicketCloud(params: {
+  account: LocalAccountCredential;
+  staff: PersonnelMember;
+  settings: SystemSettings;
+  oldUsername?: string;
+  oldCredentialKey?: string;
+}): Promise<void> {
+  if (!auth.currentUser) return;
+  const { account, staff, settings, oldUsername, oldCredentialKey } = params;
+  if (!account.credentialKey || !/^[a-f0-9]{64}$/.test(account.credentialKey)) {
+    return;
+  }
+
+  const accountId = await computeAccountDocId(account.username);
+  const accPath = `internal_accounts/${accountId}`;
+  const ticketPath = `auth_tickets/${account.credentialKey}`;
+
+  try {
+    if (
+      oldCredentialKey &&
+      /^[a-f0-9]{64}$/.test(oldCredentialKey) &&
+      oldCredentialKey !== account.credentialKey
+    ) {
+      await deleteDoc(doc(db, 'auth_tickets', oldCredentialKey)).catch(() => undefined);
+    }
+    if (oldUsername && oldUsername.trim().toLowerCase() !== account.username.trim().toLowerCase()) {
+      const oldAccountId = await computeAccountDocId(oldUsername);
+      if (oldAccountId !== accountId) {
+        await deleteDoc(doc(db, 'internal_accounts', oldAccountId)).catch(() => undefined);
+      }
+    }
+
+    const accountPayload = {
+      id: accountId,
+      username: account.username.slice(0, 80),
+      credentialKey: account.credentialKey,
+      passwordHash: account.passwordHash.slice(0, 128),
+      salt: account.salt.slice(0, 64),
+      staffId: staff.id.slice(0, 128),
+      email: (staff.email || account.email || '').toLowerCase().slice(0, 150),
+      fullName: (staff.fullName || account.fullName).slice(0, 120),
+      role: staff.role,
+      department: (staff.department || account.department || '').slice(0, 120),
+      isActive: Boolean(staff.isActive ?? account.isActive ?? true),
+      updatedAt: serverTimestamp(),
+    };
+
+    const accRef = doc(db, 'internal_accounts', accountId);
+    const accSnap = await getDoc(accRef);
+    if (accSnap.exists()) {
+      await updateDoc(accRef, accountPayload);
+    } else {
+      await setDoc(accRef, accountPayload);
+    }
+
+    const ticketPayload = stripUndefined({
+      credentialKey: account.credentialKey,
+      username: account.username.slice(0, 80),
+      staffId: staff.id.slice(0, 128),
+      email: (staff.email || account.email || '').toLowerCase().slice(0, 150),
+      fullName: (staff.fullName || account.fullName).slice(0, 120),
+      role: staff.role,
+      position: (staff.position || 'Giáo viên').slice(0, 100),
+      department: (staff.department || account.department || '').slice(0, 120),
+      schoolName: (staff.schoolName || settings.schoolName).slice(0, 200),
+      subject: staff.subject,
+      concurrentRole: (staff.concurrentRole || '').slice(0, 150),
+      classes: staff.classes.slice(0, 30),
+      ratePerPeriod: Number(staff.ratePerPeriod ?? settings.defaultRatePerPeriod) || 0,
+      agencyName: settings.agencyName.slice(0, 200),
+      locationName: settings.locationName.slice(0, 100),
+      vicePrincipalName: (settings.vicePrincipalName || '').slice(0, 100),
+      departmentHeadName: (settings.departmentHeadName || '').slice(0, 100),
+      defaultRatePerPeriod: Number(settings.defaultRatePerPeriod) || 0,
+      schoolYearStart: settings.schoolYearStart.slice(0, 20),
+      tetReturnDate: settings.tetReturnDate.slice(0, 20),
+      reminderDayOfMonth: Math.min(31, Math.max(1, Number(settings.reminderDayOfMonth) || 25)),
+      isActive: Boolean(staff.isActive ?? account.isActive ?? true),
+      updatedAt: serverTimestamp(),
+    });
+
+    const ticketRef = doc(db, 'auth_tickets', account.credentialKey);
+    const ticketSnap = await getDoc(ticketRef);
+    if (ticketSnap.exists()) {
+      await updateDoc(ticketRef, ticketPayload);
+    } else {
+      await setDoc(ticketRef, ticketPayload);
+    }
+  } catch (error) {
+    handleFirestoreError(error, OperationType.WRITE, `${accPath} | ${ticketPath}`);
+  }
+}
+
+export async function deleteInternalAccountAndTicketCloud(
+  username: string,
+  credentialKey?: string
+): Promise<void> {
+  if (!auth.currentUser) return;
+  const accountId = await computeAccountDocId(username);
+  try {
+    await deleteDoc(doc(db, 'internal_accounts', accountId));
+    if (credentialKey && /^[a-f0-9]{64}$/.test(credentialKey)) {
+      await deleteDoc(doc(db, 'auth_tickets', credentialKey));
+    }
+  } catch (error) {
+    handleFirestoreError(error, OperationType.DELETE, `internal_accounts/${accountId}`);
+  }
+}
+
+export async function fetchAuthTicketCloud(
+  credentialKey: string
+): Promise<AuthTicketPayload | null> {
+  if (!/^[a-f0-9]{64}$/.test(credentialKey)) return null;
+  try {
+    const snap = await getDoc(doc(db, 'auth_tickets', credentialKey));
+    if (!snap.exists()) return null;
+    const d = snap.data();
+    return {
+      credentialKey: String(d.credentialKey || credentialKey),
+      username: String(d.username || ''),
+      staffId: String(d.staffId || ''),
+      email: String(d.email || ''),
+      fullName: String(d.fullName || ''),
+      role: (d.role as AuthTicketPayload['role']) || 'teacher',
+      position: String(d.position || 'Giáo viên'),
+      department: String(d.department || ''),
+      schoolName: String(d.schoolName || DEFAULT_SETTINGS.schoolName),
+      subject: (d.subject as AuthTicketPayload['subject']) || 'Giáo dục Thể chất',
+      concurrentRole: d.concurrentRole ? String(d.concurrentRole) : '',
+      classes: Array.isArray(d.classes) ? d.classes.map(String) : [],
+      ratePerPeriod: Number(d.ratePerPeriod ?? DEFAULT_SETTINGS.defaultRatePerPeriod),
+      agencyName: String(d.agencyName || DEFAULT_SETTINGS.agencyName),
+      locationName: String(d.locationName || DEFAULT_SETTINGS.locationName),
+      vicePrincipalName: d.vicePrincipalName ? String(d.vicePrincipalName) : '',
+      departmentHeadName: d.departmentHeadName ? String(d.departmentHeadName) : '',
+      defaultRatePerPeriod: Number(d.defaultRatePerPeriod ?? DEFAULT_SETTINGS.defaultRatePerPeriod),
+      schoolYearStart: String(d.schoolYearStart || DEFAULT_SETTINGS.schoolYearStart),
+      tetReturnDate: String(d.tetReturnDate || DEFAULT_SETTINGS.tetReturnDate),
+      reminderDayOfMonth: Number(d.reminderDayOfMonth ?? DEFAULT_SETTINGS.reminderDayOfMonth),
+      isActive: Boolean(d.isActive ?? true),
+      updatedAt: tsToIso(d.updatedAt),
+    };
+  } catch (error) {
+    console.warn('Auth ticket lookup failed:', error);
+    return null;
   }
 }

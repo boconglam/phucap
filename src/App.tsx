@@ -11,12 +11,16 @@ import { auth, googleProvider } from './firebase';
 import { useNotifications } from './hooks/useNotifications';
 import { useOnlineStatus } from './hooks/useOnlineStatus';
 import {
+  deleteInternalAccountAndTicketCloud,
   deletePersonnelCloud,
   deleteTimesheetCloud,
+  fetchAuthTicketCloud,
+  fetchInternalAccountsCloud,
   fetchPersonnelCloud,
   fetchSystemSettingsCloud,
   fetchTimesheetsCloud,
   fetchUserProfileCloud,
+  saveInternalAccountAndTicketCloud,
   savePersonnelCloud,
   saveSystemSettingsCloud,
   saveTimesheetCloud,
@@ -33,6 +37,7 @@ import type {
 } from './types';
 import { BOOTSTRAPPED_ADMIN_EMAIL, DEFAULT_SETTINGS } from './utils/calculations';
 import {
+  computeCredentialKey,
   createLocalBackupSnapshot,
   deleteLocalAccount,
   deleteLocalPersonnel,
@@ -45,6 +50,7 @@ import {
   loadLocalSettings,
   loadLocalTimesheets,
   saveLocalAccount,
+  saveLocalAccountsList,
   saveLocalPersonnelList,
   saveLocalSettings,
   saveLocalTimesheetsList,
@@ -118,6 +124,18 @@ export default function App() {
             for (const member of personnel) {
               await savePersonnelCloud(member);
             }
+            for (const acc of localAccounts) {
+              if (acc.credentialKey) {
+                const matched = personnel.find((p) => p.id === acc.staffId);
+                if (matched) {
+                  await saveInternalAccountAndTicketCloud({
+                    account: acc,
+                    staff: matched,
+                    settings,
+                  });
+                }
+              }
+            }
           }
           for (const ts of timesheets) {
             if (
@@ -130,10 +148,11 @@ export default function App() {
           }
         }
 
-        const [cloudSettings, cloudPersonnel, cloudTimesheets] = await Promise.all([
+        const [cloudSettings, cloudPersonnel, cloudTimesheets, cloudAccounts] = await Promise.all([
           fetchSystemSettingsCloud(),
           fetchPersonnelCloud(currentUser.email, isAdminUser),
           fetchTimesheetsCloud(currentUser.uid, currentUser.email, isAdminUser),
+          isAdminUser ? fetchInternalAccountsCloud() : Promise.resolve([]),
         ]);
 
         let syncedCount = 0;
@@ -153,6 +172,20 @@ export default function App() {
           syncedCount += cloudPersonnel.length;
         }
 
+        if (isAdminUser && cloudAccounts.length > 0) {
+          const mergedMap = new Map<string, LocalAccountCredential>();
+          for (const localAcc of localAccounts) {
+            mergedMap.set(localAcc.username.toLowerCase(), localAcc);
+          }
+          for (const cloudAcc of cloudAccounts) {
+            mergedMap.set(cloudAcc.username.toLowerCase(), cloudAcc);
+          }
+          const mergedAccounts = Array.from(mergedMap.values());
+          setLocalAccounts(mergedAccounts);
+          await saveLocalAccountsList(mergedAccounts);
+          syncedCount += cloudAccounts.length;
+        }
+
         if (cloudTimesheets.length > 0) {
           setTimesheets(cloudTimesheets);
           await saveLocalTimesheetsList(cloudTimesheets);
@@ -167,7 +200,7 @@ export default function App() {
         setIsSyncing(false);
       }
     },
-    [settings, personnel, timesheets]
+    [settings, personnel, timesheets, localAccounts]
   );
 
   // Watch Firebase Auth state
@@ -295,17 +328,119 @@ export default function App() {
   const handleLocalLogin = async (usernameInput: string, passwordInput: string) => {
     setAuthLoading(true);
     setAuthError(null);
+    const cleanInput = usernameInput.trim();
     try {
+      if (navigator.onLine) {
+        const credentialKey = await computeCredentialKey(cleanInput, passwordInput);
+        const ticket = await fetchAuthTicketCloud(credentialKey);
+        if (ticket) {
+          if (!ticket.isActive) {
+            setAuthError(
+              'Tài khoản nội bộ đã bị khóa hoặc ngừng hoạt động. Vui lòng liên hệ Quản trị viên.'
+            );
+            return;
+          }
+
+          const now = new Date().toISOString();
+          const hydratedSettings: SystemSettings = {
+            ...settings,
+            agencyName: ticket.agencyName || settings.agencyName,
+            schoolName: ticket.schoolName || settings.schoolName,
+            locationName: ticket.locationName || settings.locationName,
+            vicePrincipalName: ticket.vicePrincipalName ?? settings.vicePrincipalName,
+            departmentHeadName: ticket.departmentHeadName ?? settings.departmentHeadName,
+            defaultRatePerPeriod: ticket.defaultRatePerPeriod ?? settings.defaultRatePerPeriod,
+            schoolYearStart: ticket.schoolYearStart || settings.schoolYearStart,
+            tetReturnDate: ticket.tetReturnDate || settings.tetReturnDate,
+            reminderDayOfMonth: ticket.reminderDayOfMonth ?? settings.reminderDayOfMonth,
+            updatedAt: ticket.updatedAt || now,
+          };
+          setSettings(hydratedSettings);
+          await saveLocalSettings(hydratedSettings);
+
+          const existingStaff = personnel.find((p) => p.id === ticket.staffId);
+          const hydratedStaff: PersonnelMember = {
+            id: ticket.staffId,
+            fullName: ticket.fullName,
+            email: ticket.email,
+            username: ticket.username,
+            role: ticket.role,
+            position: ticket.position,
+            department: ticket.department,
+            schoolName: ticket.schoolName,
+            subject: ticket.subject,
+            concurrentRole: ticket.concurrentRole || '',
+            classes: ticket.classes,
+            ratePerPeriod: ticket.ratePerPeriod,
+            isActive: ticket.isActive,
+            createdAt: existingStaff?.createdAt || ticket.updatedAt || now,
+            updatedAt: ticket.updatedAt || now,
+          };
+          await upsertLocalPersonnel(hydratedStaff);
+          setPersonnel((prev) =>
+            prev.some((p) => p.id === hydratedStaff.id)
+              ? prev.map((p) => (p.id === hydratedStaff.id ? hydratedStaff : p))
+              : [...prev, hydratedStaff]
+          );
+
+          const salt = generateSalt();
+          const passwordHash = await hashPassword(passwordInput, salt);
+          const cachedAccount: LocalAccountCredential = {
+            username: ticket.username,
+            passwordHash,
+            salt,
+            credentialKey,
+            staffId: ticket.staffId,
+            email: ticket.email,
+            fullName: ticket.fullName,
+            role: ticket.role,
+            department: ticket.department,
+            isActive: ticket.isActive,
+          };
+          const existingLocalAccounts = await loadLocalAccounts();
+          const cleanedAccounts = existingLocalAccounts.filter(
+            (a) => a.staffId !== ticket.staffId && a.username.toLowerCase() !== ticket.username.toLowerCase()
+          );
+          const nextLocalAccounts = [...cleanedAccounts, cachedAccount];
+          await saveLocalAccountsList(nextLocalAccounts);
+          setLocalAccounts(nextLocalAccounts);
+
+          const localProfile: UserProfile = {
+            uid: ticket.staffId,
+            email: ticket.email,
+            displayName: ticket.fullName,
+            schoolName: ticket.schoolName || hydratedSettings.schoolName,
+            department: ticket.department,
+            position: ticket.position || 'Giáo viên',
+            subject: ticket.subject,
+            concurrentRole: ticket.concurrentRole || '',
+            staffId: ticket.staffId,
+            role: ticket.role,
+            authMode: 'local',
+            updatedAt: now,
+          };
+          sessionStorage.setItem('local_user_session', JSON.stringify(localProfile));
+          setUser(localProfile);
+          return;
+        }
+      }
+
       const accounts = await loadLocalAccounts();
       const target = accounts.find(
         (a) =>
-          a.username.toLowerCase() === usernameInput.toLowerCase() ||
-          a.email.toLowerCase() === usernameInput.toLowerCase()
+          a.username.toLowerCase() === cleanInput.toLowerCase() ||
+          a.email.toLowerCase() === cleanInput.toLowerCase()
       );
       if (!target) {
         setAuthError(
-          'Không tìm thấy tài khoản nội bộ trên thiết bị này. Vui lòng liên hệ Quản trị viên hoặc đăng nhập bằng Google.'
+          navigator.onLine
+            ? 'Tên đăng nhập hoặc mật khẩu nội bộ không chính xác.'
+            : 'Không tìm thấy tài khoản nội bộ trên thiết bị này. Vui lòng kết nối mạng ở lần đăng nhập đầu tiên.'
         );
+        return;
+      }
+      if (target.isActive === false) {
+        setAuthError('Tài khoản nội bộ đã bị khóa hoặc ngừng hoạt động.');
         return;
       }
       const computedHash = await hashPassword(passwordInput, target.salt);
@@ -393,6 +528,17 @@ export default function App() {
     );
 
     const cleanUsername = member.username?.trim() || '';
+    if (
+      cleanUsername &&
+      existingAcc &&
+      existingAcc.username.toLowerCase() !== cleanUsername.toLowerCase() &&
+      !newPassword
+    ) {
+      throw new Error(
+        'Vui lòng nhập mật khẩu mới khi đổi tên đăng nhập để cập nhật xác thực đa thiết bị.'
+      );
+    }
+
     const updatedMember: PersonnelMember = {
       ...member,
       username: cleanUsername || undefined,
@@ -401,6 +547,7 @@ export default function App() {
     await upsertLocalPersonnel(updatedMember);
 
     let nextAccounts = [...localAccounts];
+    let savedAcc: LocalAccountCredential | null = null;
     if (cleanUsername) {
       if (newPassword) {
         if (existingAcc && existingAcc.username !== cleanUsername) {
@@ -409,33 +556,33 @@ export default function App() {
         }
         const salt = generateSalt();
         const passwordHash = await hashPassword(newPassword, salt);
-        const acc: LocalAccountCredential = {
+        const credentialKey = await computeCredentialKey(cleanUsername, newPassword);
+        savedAcc = {
           username: cleanUsername,
           passwordHash,
           salt,
+          credentialKey,
           staffId: updatedMember.id,
           email: updatedMember.email,
           fullName: updatedMember.fullName,
           role: updatedMember.role,
           department: updatedMember.department,
+          isActive: updatedMember.isActive,
         };
-        await saveLocalAccount(acc);
-        nextAccounts = [...nextAccounts.filter((a) => a.username !== cleanUsername), acc];
+        await saveLocalAccount(savedAcc);
+        nextAccounts = [...nextAccounts.filter((a) => a.username !== cleanUsername), savedAcc];
       } else if (existingAcc) {
-        if (existingAcc.username !== cleanUsername) {
-          await deleteLocalAccount(existingAcc.username);
-          nextAccounts = nextAccounts.filter((a) => a.username !== existingAcc.username);
-        }
-        const acc: LocalAccountCredential = {
+        savedAcc = {
           ...existingAcc,
           username: cleanUsername,
           email: updatedMember.email,
           fullName: updatedMember.fullName,
           role: updatedMember.role,
           department: updatedMember.department,
+          isActive: updatedMember.isActive,
         };
-        await saveLocalAccount(acc);
-        nextAccounts = [...nextAccounts.filter((a) => a.username !== cleanUsername), acc];
+        await saveLocalAccount(savedAcc);
+        nextAccounts = [...nextAccounts.filter((a) => a.username !== cleanUsername), savedAcc];
       }
     } else if (existingAcc) {
       await deleteLocalAccount(existingAcc.username);
@@ -456,6 +603,17 @@ export default function App() {
     );
     if (user?.authMode === 'google' && navigator.onLine) {
       await savePersonnelCloud(updatedMember);
+      if (savedAcc && savedAcc.credentialKey) {
+        await saveInternalAccountAndTicketCloud({
+          account: savedAcc,
+          staff: updatedMember,
+          settings,
+          oldUsername: existingAcc?.username,
+          oldCredentialKey: existingAcc?.credentialKey,
+        });
+      } else if (!cleanUsername && existingAcc) {
+        await deleteInternalAccountAndTicketCloud(existingAcc.username, existingAcc.credentialKey);
+      }
     }
   };
 
@@ -463,28 +621,35 @@ export default function App() {
     items: Array<{ member: PersonnelMember; initialPassword?: string }>
   ) => {
     const merged = [...personnel];
+    const importedAccounts: Array<{ account: LocalAccountCredential; staff: PersonnelMember }> = [];
     for (const { member, initialPassword } of items) {
       const idx = merged.findIndex(
         (p) => p.email.toLowerCase() === member.email.toLowerCase() && p.email !== ''
       );
+      const effectiveMember = idx >= 0 ? { ...member, id: merged[idx].id } : member;
       if (idx >= 0) {
-        merged[idx] = { ...member, id: merged[idx].id };
+        merged[idx] = effectiveMember;
       } else {
-        merged.push(member);
+        merged.push(effectiveMember);
       }
-      if (member.username && initialPassword) {
+      if (effectiveMember.username && initialPassword) {
         const salt = generateSalt();
         const passwordHash = await hashPassword(initialPassword, salt);
-        await saveLocalAccount({
-          username: member.username,
+        const credentialKey = await computeCredentialKey(effectiveMember.username, initialPassword);
+        const acc: LocalAccountCredential = {
+          username: effectiveMember.username,
           passwordHash,
           salt,
-          staffId: idx >= 0 ? merged[idx].id : member.id,
-          email: member.email,
-          fullName: member.fullName,
-          role: member.role,
-          department: member.department,
-        });
+          credentialKey,
+          staffId: effectiveMember.id,
+          email: effectiveMember.email,
+          fullName: effectiveMember.fullName,
+          role: effectiveMember.role,
+          department: effectiveMember.department,
+          isActive: effectiveMember.isActive,
+        };
+        await saveLocalAccount(acc);
+        importedAccounts.push({ account: acc, staff: effectiveMember });
       }
     }
     await saveLocalPersonnelList(merged);
@@ -494,6 +659,9 @@ export default function App() {
     if (user?.authMode === 'google' && navigator.onLine) {
       for (const item of merged) {
         await savePersonnelCloud(item);
+      }
+      for (const { account, staff } of importedAccounts) {
+        await saveInternalAccountAndTicketCloud({ account, staff, settings });
       }
     }
   };
@@ -509,6 +677,9 @@ export default function App() {
     setPersonnel(nextList);
     if (user?.authMode === 'google' && navigator.onLine) {
       await deletePersonnelCloud(id);
+      for (const acc of linkedAccounts) {
+        await deleteInternalAccountAndTicketCloud(acc.username, acc.credentialKey);
+      }
     }
   };
 
@@ -541,12 +712,23 @@ export default function App() {
     if (!existingAcc && !params.password) {
       throw new Error('Vui lòng nhập mật khẩu cho tài khoản mới.');
     }
+    if (
+      existingAcc &&
+      existingAcc.username.toLowerCase() !== cleanUsername.toLowerCase() &&
+      !params.password
+    ) {
+      throw new Error(
+        'Vui lòng nhập mật khẩu mới khi đổi tên đăng nhập để cập nhật xác thực đa thiết bị.'
+      );
+    }
 
     let passwordHash = existingAcc?.passwordHash || '';
     let salt = existingAcc?.salt || '';
+    let credentialKey = existingAcc?.credentialKey;
     if (params.password) {
       salt = generateSalt();
       passwordHash = await hashPassword(params.password, salt);
+      credentialKey = await computeCredentialKey(cleanUsername, params.password);
     }
 
     // Find or create linked PersonnelMember
@@ -605,11 +787,13 @@ export default function App() {
       username: cleanUsername,
       passwordHash,
       salt,
+      credentialKey,
       staffId: targetStaff.id,
       email: targetStaff.email,
       fullName: targetStaff.fullName,
       role: targetStaff.role,
       department: targetStaff.department,
+      isActive: targetStaff.isActive,
     };
     await saveLocalAccount(newAcc);
 
@@ -623,6 +807,15 @@ export default function App() {
     await recordBackupSnapshot(`Cập nhật tài khoản ${cleanUsername}`, settings, nextPersonnel, timesheets);
     if (user?.authMode === 'google' && navigator.onLine) {
       await savePersonnelCloud(targetStaff);
+      if (newAcc.credentialKey) {
+        await saveInternalAccountAndTicketCloud({
+          account: newAcc,
+          staff: targetStaff,
+          settings,
+          oldUsername: params.oldUsername,
+          oldCredentialKey: existingAcc?.credentialKey,
+        });
+      }
     }
   };
 
@@ -632,6 +825,9 @@ export default function App() {
     setLocalAccounts(localAccounts.filter((a) => a.username !== username));
 
     if (acc) {
+      if (user?.authMode === 'google' && navigator.onLine) {
+        await deleteInternalAccountAndTicketCloud(username, acc.credentialKey);
+      }
       const targetStaff = personnel.find((p) => p.id === acc.staffId);
       if (targetStaff) {
         const updatedStaff: PersonnelMember = {
@@ -664,6 +860,18 @@ export default function App() {
     await recordBackupSnapshot('Cập nhật cài đặt hệ thống', nextSettings, personnel, timesheets);
     if (user?.authMode === 'google' && navigator.onLine) {
       await saveSystemSettingsCloud(nextSettings);
+      for (const acc of localAccounts) {
+        if (acc.credentialKey) {
+          const staff = personnel.find((p) => p.id === acc.staffId);
+          if (staff) {
+            await saveInternalAccountAndTicketCloud({
+              account: acc,
+              staff,
+              settings: nextSettings,
+            });
+          }
+        }
+      }
     }
   };
 

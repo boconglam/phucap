@@ -107,11 +107,39 @@ export interface LocalAccountCredential {
   username: string;
   passwordHash: string;
   salt: string;
+  credentialKey?: string;
   staffId: string;
   email: string;
   fullName: string;
   role: UserRole;
   department: string;
+  isActive?: boolean;
+}
+
+export interface AuthTicketPayload {
+  credentialKey: string;
+  username: string;
+  staffId: string;
+  email: string;
+  fullName: string;
+  role: UserRole;
+  position: string;
+  department: string;
+  schoolName: string;
+  subject: SubjectType;
+  concurrentRole?: string;
+  classes: string[];
+  ratePerPeriod: number;
+  agencyName: string;
+  locationName: string;
+  vicePrincipalName?: string;
+  departmentHeadName?: string;
+  defaultRatePerPeriod: number;
+  schoolYearStart: string;
+  tetReturnDate: string;
+  reminderDayOfMonth: number;
+  isActive: boolean;
+  updatedAt: string;
 }
 
 export interface LocalBackupSnapshot {

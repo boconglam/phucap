@@ -11,6 +11,10 @@ service cloud.firestore {
       return id is string && id.size() >= 1 && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
     }
 
+    function isValidHex64(val) {
+      return val is string && val.size() == 64 && val.matches('^[a-f0-9]{64}$');
+    }
+
     function incoming() {
       return request.resource.data;
     }
@@ -185,6 +189,68 @@ service cloud.firestore {
       data.createdAt is timestamp;
     }
 
+    function isValidInternalAccount(data) {
+      return data.keys().hasAll([
+        'id', 'username', 'credentialKey', 'passwordHash', 'salt',
+        'staffId', 'email', 'fullName', 'role', 'department', 'isActive', 'updatedAt'
+      ]) &&
+      data.keys().hasOnly([
+        'id', 'username', 'credentialKey', 'passwordHash', 'salt',
+        'staffId', 'email', 'fullName', 'role', 'department', 'isActive', 'updatedAt'
+      ]) &&
+      isValidHex64(data.id) &&
+      data.username is string && data.username.size() >= 1 && data.username.size() <= 80 &&
+      isValidHex64(data.credentialKey) &&
+      data.passwordHash is string && data.passwordHash.size() >= 16 && data.passwordHash.size() <= 128 &&
+      data.salt is string && data.salt.size() >= 8 && data.salt.size() <= 64 &&
+      isValidId(data.staffId) &&
+      data.email is string && data.email.size() <= 150 &&
+      data.fullName is string && data.fullName.size() >= 1 && data.fullName.size() <= 120 &&
+      isValidRole(data.role) &&
+      data.department is string && data.department.size() <= 120 &&
+      data.isActive is bool &&
+      data.updatedAt is timestamp;
+    }
+
+    function isValidAuthTicket(data) {
+      return data.keys().hasAll([
+        'credentialKey', 'username', 'staffId', 'email', 'fullName', 'role',
+        'position', 'department', 'schoolName', 'subject', 'classes', 'ratePerPeriod',
+        'agencyName', 'locationName', 'defaultRatePerPeriod', 'schoolYearStart',
+        'tetReturnDate', 'reminderDayOfMonth', 'isActive', 'updatedAt'
+      ]) &&
+      data.keys().hasOnly([
+        'credentialKey', 'username', 'staffId', 'email', 'fullName', 'role',
+        'position', 'department', 'schoolName', 'subject', 'concurrentRole', 'classes',
+        'ratePerPeriod', 'agencyName', 'locationName', 'vicePrincipalName', 'departmentHeadName',
+        'defaultRatePerPeriod', 'schoolYearStart', 'tetReturnDate', 'reminderDayOfMonth',
+        'isActive', 'updatedAt'
+      ]) &&
+      isValidHex64(data.credentialKey) &&
+      data.username is string && data.username.size() >= 1 && data.username.size() <= 80 &&
+      isValidId(data.staffId) &&
+      data.email is string && data.email.size() <= 150 &&
+      data.fullName is string && data.fullName.size() >= 1 && data.fullName.size() <= 120 &&
+      isValidRole(data.role) &&
+      data.position is string && data.position.size() <= 100 &&
+      data.department is string && data.department.size() <= 120 &&
+      data.schoolName is string && data.schoolName.size() <= 200 &&
+      isValidSubject(data.subject) &&
+      (!('concurrentRole' in data) || (data.concurrentRole is string && data.concurrentRole.size() <= 150)) &&
+      isValidStringList(data.classes, 30) &&
+      data.ratePerPeriod is number && data.ratePerPeriod >= 0 && data.ratePerPeriod <= 10000000 &&
+      data.agencyName is string && data.agencyName.size() <= 200 &&
+      data.locationName is string && data.locationName.size() <= 100 &&
+      (!('vicePrincipalName' in data) || (data.vicePrincipalName is string && data.vicePrincipalName.size() <= 100)) &&
+      (!('departmentHeadName' in data) || (data.departmentHeadName is string && data.departmentHeadName.size() <= 100)) &&
+      data.defaultRatePerPeriod is number && data.defaultRatePerPeriod >= 0 && data.defaultRatePerPeriod <= 10000000 &&
+      data.schoolYearStart is string && data.schoolYearStart.size() <= 20 &&
+      data.tetReturnDate is string && data.tetReturnDate.size() <= 20 &&
+      data.reminderDayOfMonth is number && data.reminderDayOfMonth >= 1 && data.reminderDayOfMonth <= 31 &&
+      data.isActive is bool &&
+      data.updatedAt is timestamp;
+    }
+
     // 4. Collection Rules
     match /admins/{adminId} {
       allow get: if isVerified() && isValidId(adminId) && (request.auth.uid == adminId || isAdmin());
@@ -319,6 +385,37 @@ service cloud.firestore {
         isAdmin() ||
         (existing().ownerUid == request.auth.uid && existing().status == 'draft')
       );
+    }
+
+    match /internal_accounts/{accountId} {
+      allow get: if isAdmin() && isValidHex64(accountId);
+      allow list: if isAdmin();
+      allow create: if isAdmin() && isValidHex64(accountId) && isValidInternalAccount(incoming()) &&
+        incoming().id == accountId && incoming().updatedAt == request.time;
+      allow update: if isAdmin() && isValidHex64(accountId) && isValidInternalAccount(incoming()) &&
+        incoming().id == existing().id && incoming().updatedAt == request.time &&
+        incoming().diff(existing()).affectedKeys().hasOnly([
+          'username', 'credentialKey', 'passwordHash', 'salt', 'staffId',
+          'email', 'fullName', 'role', 'department', 'isActive', 'updatedAt'
+        ]);
+      allow delete: if isAdmin() && isValidHex64(accountId);
+    }
+
+    match /auth_tickets/{credentialKey} {
+      allow get: if isValidHex64(credentialKey);
+      allow list: if false;
+      allow create: if isAdmin() && isValidHex64(credentialKey) && isValidAuthTicket(incoming()) &&
+        incoming().credentialKey == credentialKey && incoming().updatedAt == request.time;
+      allow update: if isAdmin() && isValidHex64(credentialKey) && isValidAuthTicket(incoming()) &&
+        incoming().credentialKey == existing().credentialKey && incoming().updatedAt == request.time &&
+        incoming().diff(existing()).affectedKeys().hasOnly([
+          'username', 'staffId', 'email', 'fullName', 'role', 'position', 'department',
+          'schoolName', 'subject', 'concurrentRole', 'classes', 'ratePerPeriod',
+          'agencyName', 'locationName', 'vicePrincipalName', 'departmentHeadName',
+          'defaultRatePerPeriod', 'schoolYearStart', 'tetReturnDate', 'reminderDayOfMonth',
+          'isActive', 'updatedAt'
+        ]);
+      allow delete: if isAdmin() && isValidHex64(credentialKey);
     }
   }
 }
