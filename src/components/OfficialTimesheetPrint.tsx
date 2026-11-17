@@ -25,6 +25,7 @@ export const OfficialTimesheetPrint: React.FC<OfficialTimesheetPrintProps> = ({
         color: '#000000',
         backgroundColor: '#ffffff',
         boxSizing: 'border-box',
+        fontFamily: "'Times New Roman', Times, 'Noto Serif', serif",
       }}
     >
       {/* Header Row: Agency / School on left, National Motto on right */}
@@ -32,6 +33,7 @@ export const OfficialTimesheetPrint: React.FC<OfficialTimesheetPrintProps> = ({
         <div className="text-center w-[48%]">
           <div className="uppercase font-normal tracking-tight">{timesheet.agencyName}</div>
           <div className="uppercase font-bold tracking-tight">{timesheet.schoolName}</div>
+          <div className="mx-auto mt-1 w-48 border-b border-black" />
         </div>
         <div className="text-center w-[48%]">
           <div className="uppercase font-bold">CỘNG HÒA XÃ HỘI CHỦ NGHĨA VIỆT NAM</div>
@@ -42,7 +44,10 @@ export const OfficialTimesheetPrint: React.FC<OfficialTimesheetPrintProps> = ({
       </div>
 
       {/* Document Title */}
-      <h1 className="text-center font-bold uppercase text-[14pt] mt-4 mb-4 tracking-wide">
+      <h1
+        className="text-center font-bold uppercase text-[14pt] mt-4 mb-4 tracking-wide"
+        style={{ fontFamily: "'Times New Roman', Times, 'Noto Serif', serif" }}
+      >
         BẢNG KÊ PHỤ CẤP DẠY NGOÀI TRỜI THÁNG {timesheet.month} NĂM {timesheet.year}
       </h1>
 

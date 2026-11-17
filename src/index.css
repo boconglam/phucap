@@ -21,10 +21,14 @@
   .tabular-nums {
     font-variant-numeric: tabular-nums;
   }
+}
 
-  .font-official {
-    font-family: var(--font-official);
-  }
+.font-official,
+.font-official h1,
+.font-official h2,
+.font-official th,
+.font-official td {
+  font-family: 'Times New Roman', Times, 'Noto Serif', Georgia, serif !important;
 }
 
 @media print {

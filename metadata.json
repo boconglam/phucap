@@ -2,5 +2,7 @@
   "name": "Sổ Phụ Cấp Sân Bãi",
   "description": "Ứng dụng tính tiền phụ cấp tiết dạy ngoài trời môn Giáo dục Thể chất và Giáo dục Quốc phòng An ninh, hỗ trợ xuất PDF chuẩn mẫu, Excel, phân quyền, sao lưu Firestore và hoạt động ngoại tuyến.",
   "requestFramePermissions": [],
-  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
 }

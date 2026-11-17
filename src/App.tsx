@@ -89,13 +89,40 @@ export default function App() {
   }, []);
 
   const syncWithCloud = useCallback(
-    async (currentUser: UserProfile) => {
-      if (currentUser.authMode !== 'google' || !navigator.onLine) return;
+    async (
+      currentUser: UserProfile,
+      pushLocal = false
+    ): Promise<{ syncedCount: number; syncedAt: string }> => {
+      if (currentUser.authMode !== 'google') {
+        throw new Error('Vui lòng đăng nhập bằng tài khoản Google để đồng bộ Firestore.');
+      }
+      if (!navigator.onLine) {
+        throw new Error('Thiết bị đang ngoại tuyến. Không thể kết nối tới Firestore.');
+      }
       setIsSyncing(true);
       try {
         const isAdminUser =
           currentUser.role === 'admin' ||
           currentUser.email.toLowerCase() === BOOTSTRAPPED_ADMIN_EMAIL;
+
+        if (pushLocal) {
+          await saveUserProfileCloud(currentUser);
+          if (isAdminUser) {
+            await saveSystemSettingsCloud(settings);
+            for (const member of personnel) {
+              await savePersonnelCloud(member);
+            }
+          }
+          for (const ts of timesheets) {
+            if (
+              isAdminUser ||
+              ts.ownerUid === currentUser.uid ||
+              ts.teacherEmail.toLowerCase() === currentUser.email.toLowerCase()
+            ) {
+              await saveTimesheetCloud(ts);
+            }
+          }
+        }
 
         const [cloudSettings, cloudPersonnel, cloudTimesheets] = await Promise.all([
           fetchSystemSettingsCloud(),
@@ -103,29 +130,38 @@ export default function App() {
           fetchTimesheetsCloud(currentUser.uid, currentUser.email, isAdminUser),
         ]);
 
+        let syncedCount = 0;
+
         if (cloudSettings) {
           setSettings(cloudSettings);
           await saveLocalSettings(cloudSettings);
+          syncedCount += 1;
         } else if (isAdminUser) {
           await saveSystemSettingsCloud(settings);
+          syncedCount += 1;
         }
 
         if (cloudPersonnel.length > 0) {
           setPersonnel(cloudPersonnel);
           await saveLocalPersonnelList(cloudPersonnel);
+          syncedCount += cloudPersonnel.length;
         }
 
         if (cloudTimesheets.length > 0) {
           setTimesheets(cloudTimesheets);
           await saveLocalTimesheetsList(cloudTimesheets);
+          syncedCount += cloudTimesheets.length;
         }
-      } catch (err) {
-        console.warn('Cloud sync warning:', err);
+
+        return {
+          syncedCount,
+          syncedAt: new Date().toLocaleTimeString('vi-VN'),
+        };
       } finally {
         setIsSyncing(false);
       }
     },
-    [settings]
+    [settings, personnel, timesheets]
   );
 
   // Watch Firebase Auth state
@@ -154,7 +190,9 @@ export default function App() {
         const isBootAdmin = emailLower === BOOTSTRAPPED_ADMIN_EMAIL;
 
         try {
-          let cloudProfile = navigator.onLine ? await fetchUserProfileCloud(fbUser.uid) : null;
+          const localSavedRaw = localStorage.getItem(`user_profile_${fbUser.uid}`);
+          const localSaved = localSavedRaw ? (JSON.parse(localSavedRaw) as UserProfile) : null;
+          const cloudProfile = navigator.onLine ? await fetchUserProfileCloud(fbUser.uid) : localSaved;
           const matchedStaff = locPersonnel.find((p) => p.email.toLowerCase() === emailLower);
 
           const resolvedRole = isBootAdmin
@@ -165,24 +203,40 @@ export default function App() {
             uid: fbUser.uid,
             email: emailLower,
             displayName:
-              matchedStaff?.fullName ||
               cloudProfile?.displayName ||
+              localSaved?.displayName ||
+              matchedStaff?.fullName ||
               fbUser.displayName ||
               emailLower.split('@')[0],
             schoolName:
-              cloudProfile?.schoolName || matchedStaff?.schoolName || locSettings.schoolName,
+              cloudProfile?.schoolName ||
+              localSaved?.schoolName ||
+              matchedStaff?.schoolName ||
+              locSettings.schoolName,
             department:
-              cloudProfile?.department || matchedStaff?.department || 'Tổ Thể dục - QP&AN',
+              cloudProfile?.department ||
+              localSaved?.department ||
+              matchedStaff?.department ||
+              'Tổ Thể dục - QP&AN',
             position:
-              matchedStaff?.position ||
               cloudProfile?.position ||
+              localSaved?.position ||
+              matchedStaff?.position ||
               (resolvedRole === 'admin'
                 ? 'Quản trị viên'
                 : resolvedRole === 'leader'
                   ? 'Tổ trưởng chuyên môn'
                   : 'Giáo viên'),
-            subject: matchedStaff?.subject || cloudProfile?.subject || 'Giáo dục Thể chất',
-            concurrentRole: matchedStaff?.concurrentRole || cloudProfile?.concurrentRole || '',
+            subject:
+              cloudProfile?.subject ||
+              localSaved?.subject ||
+              matchedStaff?.subject ||
+              'Giáo dục Thể chất',
+            concurrentRole:
+              cloudProfile?.concurrentRole ??
+              localSaved?.concurrentRole ??
+              matchedStaff?.concurrentRole ??
+              '',
             staffId: matchedStaff?.id || cloudProfile?.staffId || fbUser.uid,
             role: resolvedRole,
             authMode: 'google',
@@ -213,7 +267,7 @@ export default function App() {
   // Re-sync automatically when coming back online
   useEffect(() => {
     if (isOnline && user?.authMode === 'google') {
-      void syncWithCloud(user);
+      void syncWithCloud(user).catch((err) => console.warn('Auto sync warning:', err));
     }
   }, [isOnline, user]);
 
@@ -401,6 +455,7 @@ export default function App() {
 
   const handleSaveProfile = async (profile: UserProfile) => {
     setUser(profile);
+    localStorage.setItem(`user_profile_${profile.uid}`, JSON.stringify(profile));
     if (profile.authMode === 'local') {
       sessionStorage.setItem('local_user_session', JSON.stringify(profile));
     } else if (navigator.onLine) {
@@ -637,7 +692,7 @@ export default function App() {
             notificationPermission={permission}
             onSaveProfile={handleSaveProfile}
             onSaveSettings={handleSaveSettings}
-            onSyncNow={() => syncWithCloud(user)}
+            onSyncNow={() => syncWithCloud(user, true)}
             onRestoreSnapshot={handleRestoreSnapshot}
             onImportJsonBackup={handleImportJsonBackup}
             onRequestNotifications={requestPermission}

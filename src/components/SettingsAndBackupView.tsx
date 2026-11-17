@@ -1,10 +1,13 @@
-import React, { useRef, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import {
+  AlertCircle,
   BellRing,
+  CheckCircle2,
   CloudUpload,
   DatabaseBackup,
   Download,
   History,
+  RefreshCw,
   Save,
   Upload,
 } from 'lucide-react';
@@ -18,6 +21,11 @@ import type {
 } from '../types';
 import { exportBackupJSON } from '../utils/storage';
 
+interface StatusNotice {
+  type: 'success' | 'error';
+  message: string;
+}
+
 interface SettingsAndBackupViewProps {
   user: UserProfile;
   settings: SystemSettings;
@@ -27,7 +35,7 @@ interface SettingsAndBackupViewProps {
   notificationPermission: NotificationPermission;
   onSaveProfile: (profile: UserProfile) => Promise<void>;
   onSaveSettings: (settings: SystemSettings) => Promise<void>;
-  onSyncNow: () => Promise<void>;
+  onSyncNow: () => Promise<{ syncedCount: number; syncedAt: string }>;
   onRestoreSnapshot: (snapshot: LocalBackupSnapshot) => Promise<void>;
   onImportJsonBackup: (payload: {
     settings?: SystemSettings;
@@ -37,6 +45,24 @@ interface SettingsAndBackupViewProps {
   onRequestNotifications: () => Promise<NotificationPermission>;
   onSendTestNotification: () => Promise<void>;
 }
+
+const InlineStatus: React.FC<{ status: StatusNotice | null }> = ({ status }) => {
+  if (!status) return null;
+  return (
+    <span
+      className={`inline-flex items-center gap-1.5 text-xs font-medium ${
+        status.type === 'success' ? 'text-emerald-800' : 'text-red-700'
+      }`}
+    >
+      {status.type === 'success' ? (
+        <CheckCircle2 className="w-3.5 h-3.5 shrink-0" />
+      ) : (
+        <AlertCircle className="w-3.5 h-3.5 shrink-0" />
+      )}
+      <span>{status.message}</span>
+    </span>
+  );
+};
 
 export const SettingsAndBackupView: React.FC<SettingsAndBackupViewProps> = ({
   user,
@@ -56,53 +82,131 @@ export const SettingsAndBackupView: React.FC<SettingsAndBackupViewProps> = ({
   const isAdmin = user.role === 'admin';
   const [profileForm, setProfileForm] = useState<UserProfile>({ ...user });
   const [settingsForm, setSettingsForm] = useState<SystemSettings>({ ...settings });
-  const [feedback, setFeedback] = useState<string | null>(null);
-  const [isBusy, setIsBusy] = useState(false);
+
+  const [profileStatus, setProfileStatus] = useState<StatusNotice | null>(null);
+  const [settingsStatus, setSettingsStatus] = useState<StatusNotice | null>(null);
+  const [syncStatus, setSyncStatus] = useState<StatusNotice | null>(null);
+
+  const [isSavingProfile, setIsSavingProfile] = useState(false);
+  const [isSavingSettings, setIsSavingSettings] = useState(false);
+  const [isSyncingNow, setIsSyncingNow] = useState(false);
+  const [isRestoring, setIsRestoring] = useState(false);
+
   const jsonInputRef = useRef<HTMLInputElement | null>(null);
+
+  useEffect(() => {
+    setProfileForm({ ...user });
+  }, [user]);
+
+  useEffect(() => {
+    setSettingsForm({ ...settings });
+  }, [settings]);
 
   const handleSaveProfileSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    setIsBusy(true);
-    setFeedback(null);
+    setIsSavingProfile(true);
+    setProfileStatus(null);
     try {
       await onSaveProfile({ ...profileForm, updatedAt: new Date().toISOString() });
-      setFeedback('Đã lưu cấu hình tài khoản cá nhân.');
+      const time = new Date().toLocaleTimeString('vi-VN');
+      setProfileStatus({
+        type: 'success',
+        message: `Đã cập nhật hồ sơ cá nhân lúc ${time}.`,
+      });
+    } catch (err) {
+      setProfileStatus({
+        type: 'error',
+        message: err instanceof Error ? err.message : 'Không thể lưu hồ sơ cá nhân.',
+      });
     } finally {
-      setIsBusy(false);
+      setIsSavingProfile(false);
     }
   };
 
   const handleSaveSettingsSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    setIsBusy(true);
-    setFeedback(null);
+    setIsSavingSettings(true);
+    setSettingsStatus(null);
     try {
       await onSaveSettings({
         ...settingsForm,
         updatedBy: user.uid,
         updatedAt: new Date().toISOString(),
       });
-      setFeedback('Đã lưu cài đặt chung toàn trường & lịch năm học.');
+      const time = new Date().toLocaleTimeString('vi-VN');
+      setSettingsStatus({
+        type: 'success',
+        message: `Đã cập nhật cài đặt hệ thống lúc ${time}.`,
+      });
+    } catch (err) {
+      setSettingsStatus({
+        type: 'error',
+        message: err instanceof Error ? err.message : 'Không thể lưu cài đặt hệ thống.',
+      });
     } finally {
-      setIsBusy(false);
+      setIsSavingSettings(false);
+    }
+  };
+
+  const handleSyncFirestoreClick = async () => {
+    setIsSyncingNow(true);
+    setSyncStatus(null);
+    try {
+      const result = await onSyncNow();
+      setSyncStatus({
+        type: 'success',
+        message: `Đã đồng bộ Firestore (${result.syncedCount} mục) lúc ${result.syncedAt}.`,
+      });
+    } catch (err) {
+      setSyncStatus({
+        type: 'error',
+        message: err instanceof Error ? err.message : 'Không thể đồng bộ với Firestore.',
+      });
+    } finally {
+      setIsSyncingNow(false);
     }
   };
 
   const handleJsonUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
-    setIsBusy(true);
-    setFeedback(null);
+    setIsRestoring(true);
+    setSyncStatus(null);
     try {
       const text = await file.text();
       const parsed = JSON.parse(text);
       await onImportJsonBackup(parsed);
-      setFeedback('Đã phục hồi dữ liệu từ tệp sao lưu JSON.');
+      setSyncStatus({
+        type: 'success',
+        message: `Đã phục hồi dữ liệu từ tệp sao lưu JSON lúc ${new Date().toLocaleTimeString('vi-VN')}.`,
+      });
     } catch {
-      setFeedback('Tệp sao lưu JSON không hợp lệ.');
+      setSyncStatus({
+        type: 'error',
+        message: 'Tệp sao lưu JSON không hợp lệ.',
+      });
     } finally {
-      setIsBusy(false);
+      setIsRestoring(false);
       if (jsonInputRef.current) jsonInputRef.current.value = '';
+    }
+  };
+
+  const handleRestoreLocalSnapshot = async (bk: LocalBackupSnapshot) => {
+    setIsRestoring(true);
+    setSyncStatus(null);
+    try {
+      await onRestoreSnapshot(bk);
+      setSyncStatus({
+        type: 'success',
+        message: `Đã khôi phục dữ liệu về mốc "${bk.reason}".`,
+      });
+    } catch (err) {
+      setSyncStatus({
+        type: 'error',
+        message: err instanceof Error ? err.message : 'Không thể khôi phục mốc sao lưu.',
+      });
+    } finally {
+      setIsRestoring(false);
     }
   };
 
@@ -114,12 +218,6 @@ export const SettingsAndBackupView: React.FC<SettingsAndBackupViewProps> = ({
           Cài đặt hệ thống &amp; Sao lưu dữ liệu
         </h1>
       </div>
-
-      {feedback && (
-        <div className="rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-2.5 text-xs font-medium text-emerald-900">
-          {feedback}
-        </div>
-      )}
 
       {/* 1. Personal Account Configuration */}
       <form
@@ -133,9 +231,7 @@ export const SettingsAndBackupView: React.FC<SettingsAndBackupViewProps> = ({
               Tên trường và tổ chuyên môn sẽ hiển thị tự động trên các bảng kê của bạn
             </p>
           </div>
-          <span className="text-xs text-slate-500">
-            {user.email}
-          </span>
+          <span className="text-xs text-slate-500">{user.email}</span>
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
@@ -209,14 +305,15 @@ export const SettingsAndBackupView: React.FC<SettingsAndBackupViewProps> = ({
           </div>
         </div>
 
-        <div className="flex justify-end">
+        <div className="flex flex-wrap items-center justify-between gap-3 pt-1">
+          <InlineStatus status={profileStatus} />
           <button
             type="submit"
-            disabled={isBusy}
-            className="inline-flex items-center gap-2 rounded-lg bg-slate-900 px-4 py-2 text-xs font-medium text-white hover:bg-slate-800 disabled:opacity-50 cursor-pointer"
+            disabled={isSavingProfile}
+            className="ml-auto inline-flex items-center gap-2 rounded-lg bg-slate-900 px-4 py-2 text-xs font-medium text-white hover:bg-slate-800 disabled:opacity-50 cursor-pointer"
           >
             <Save className="w-3.5 h-3.5" />
-            <span>Lưu hồ sơ cá nhân</span>
+            <span>{isSavingProfile ? 'Đang lưu...' : 'Lưu hồ sơ cá nhân'}</span>
           </button>
         </div>
       </form>
@@ -375,14 +472,15 @@ export const SettingsAndBackupView: React.FC<SettingsAndBackupViewProps> = ({
         </div>
 
         {isAdmin && (
-          <div className="flex justify-end">
+          <div className="flex flex-wrap items-center justify-between gap-3 pt-1">
+            <InlineStatus status={settingsStatus} />
             <button
               type="submit"
-              disabled={isBusy}
-              className="inline-flex items-center gap-2 rounded-lg bg-emerald-800 px-4 py-2 text-xs font-medium text-white hover:bg-emerald-900 disabled:opacity-50 cursor-pointer"
+              disabled={isSavingSettings}
+              className="ml-auto inline-flex items-center gap-2 rounded-lg bg-emerald-800 px-4 py-2 text-xs font-medium text-white hover:bg-emerald-900 disabled:opacity-50 cursor-pointer"
             >
               <Save className="w-3.5 h-3.5" />
-              <span>Lưu cài đặt hệ thống</span>
+              <span>{isSavingSettings ? 'Đang lưu...' : 'Lưu cài đặt hệ thống'}</span>
             </button>
           </div>
         )}
@@ -440,12 +538,16 @@ export const SettingsAndBackupView: React.FC<SettingsAndBackupViewProps> = ({
             {user.authMode === 'google' && (
               <button
                 type="button"
-                disabled={isBusy}
-                onClick={() => void onSyncNow()}
-                className="inline-flex items-center gap-2 rounded-lg bg-emerald-800 px-3.5 py-2 text-xs font-medium text-white hover:bg-emerald-900 cursor-pointer"
+                disabled={isSyncingNow || isRestoring}
+                onClick={() => void handleSyncFirestoreClick()}
+                className="inline-flex items-center gap-2 rounded-lg bg-emerald-800 px-3.5 py-2 text-xs font-medium text-white hover:bg-emerald-900 disabled:opacity-50 cursor-pointer"
               >
-                <CloudUpload className="w-3.5 h-3.5" />
-                <span>Đồng bộ Firestore ngay</span>
+                {isSyncingNow ? (
+                  <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                ) : (
+                  <CloudUpload className="w-3.5 h-3.5" />
+                )}
+                <span>{isSyncingNow ? 'Đang đồng bộ...' : 'Đồng bộ Firestore ngay'}</span>
               </button>
             )}
 
@@ -467,13 +569,26 @@ export const SettingsAndBackupView: React.FC<SettingsAndBackupViewProps> = ({
             />
             <button
               type="button"
+              disabled={isRestoring}
               onClick={() => jsonInputRef.current?.click()}
-              className="inline-flex items-center gap-2 rounded-lg border border-slate-300 bg-white px-3.5 py-2 text-xs font-medium text-slate-700 hover:bg-slate-50 cursor-pointer"
+              className="inline-flex items-center gap-2 rounded-lg border border-slate-300 bg-white px-3.5 py-2 text-xs font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-50 cursor-pointer"
             >
               <Upload className="w-3.5 h-3.5 text-emerald-700" />
               <span>Phục hồi từ tệp</span>
             </button>
           </div>
+
+          {syncStatus && (
+            <div
+              className={`rounded-lg border px-3 py-2 text-xs ${
+                syncStatus.type === 'success'
+                  ? 'border-emerald-200 bg-emerald-50 text-emerald-900'
+                  : 'border-red-200 bg-red-50 text-red-800'
+              }`}
+            >
+              <InlineStatus status={syncStatus} />
+            </div>
+          )}
         </div>
       </div>
 
@@ -505,8 +620,9 @@ export const SettingsAndBackupView: React.FC<SettingsAndBackupViewProps> = ({
                 </div>
                 <button
                   type="button"
-                  onClick={() => void onRestoreSnapshot(bk)}
-                  className="font-medium text-emerald-800 hover:underline shrink-0 cursor-pointer"
+                  disabled={isRestoring}
+                  onClick={() => void handleRestoreLocalSnapshot(bk)}
+                  className="font-medium text-emerald-800 hover:underline shrink-0 disabled:opacity-50 cursor-pointer"
                 >
                   Khôi phục mốc này
                 </button>
