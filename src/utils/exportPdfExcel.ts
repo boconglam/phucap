@@ -41,10 +41,16 @@ export async function exportElementToPDF(element: HTMLElement, fileName: string)
   pdf.save(fileName.endsWith('.pdf') ? fileName : `${fileName}.pdf`);
 }
 
-export function exportTimesheetToExcel(ts: TimesheetRecord): void {
+export function exportTimesheetToExcel(ts: TimesheetRecord, settings?: SystemSettings): void {
+  const agencyName = settings?.agencyName || ts.agencyName;
+  const schoolName = settings?.schoolName || ts.schoolName;
+  const locationName = settings?.locationName || ts.locationName || 'Châu Hưng';
+  const vicePrincipalName = settings ? settings.vicePrincipalName : ts.vicePrincipalName || '';
+  const departmentHeadName = settings ? settings.departmentHeadName : ts.departmentHeadName || '';
+
   const rows: (string | number)[][] = [
-    [ts.agencyName, '', '', '', '', 'CỘNG HÒA XÃ HỘI CHỦ NGHĨA VIỆT NAM'],
-    [ts.schoolName, '', '', '', '', 'Độc lập - Tự do - Hạnh phúc'],
+    [agencyName, '', '', '', '', 'CỘNG HÒA XÃ HỘI CHỦ NGHĨA VIỆT NAM'],
+    [schoolName, '', '', '', '', 'Độc lập - Tự do - Hạnh phúc'],
     [],
     [`BẢNG KÊ PHỤ CẤP DẠY NGOÀI TRỜI THÁNG ${ts.month} NĂM ${ts.year}`],
     [],
@@ -93,16 +99,16 @@ export function exportTimesheetToExcel(ts: TimesheetRecord): void {
     'TỔ TRƯỞNG',
     '',
     '',
-    `${ts.locationName || 'Châu Hưng'}, ngày ${String(declDate.day).padStart(2, '0')} tháng ${String(declDate.month).padStart(2, '0')} năm ${declDate.year}`,
+    `${locationName}, ngày ${String(declDate.day).padStart(2, '0')} tháng ${String(declDate.month).padStart(2, '0')} năm ${declDate.year}`,
   ]);
   rows.push(['PHÓ HIỆU TRƯỞNG', '', '', '', '', '', 'NGƯỜI KÊ KHAI']);
   rows.push([]);
   rows.push([]);
   rows.push([
-    ts.vicePrincipalName || '',
+    vicePrincipalName,
     '',
     '',
-    ts.departmentHeadName || '',
+    departmentHeadName,
     '',
     '',
     ts.teacherName,

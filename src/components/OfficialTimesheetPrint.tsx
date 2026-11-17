@@ -1,20 +1,27 @@
 import React from 'react';
-import type { TimesheetRecord } from '../types';
+import type { SystemSettings, TimesheetRecord } from '../types';
 import { formatVND, getDeclarationDate } from '../utils/calculations';
 
 interface OfficialTimesheetPrintProps {
   timesheet: TimesheetRecord;
+  settings?: SystemSettings;
   sheetRef?: React.RefObject<HTMLDivElement | null>;
 }
 
 export const OfficialTimesheetPrint: React.FC<OfficialTimesheetPrintProps> = ({
   timesheet,
+  settings,
   sheetRef,
 }) => {
   const declDate = getDeclarationDate(timesheet.month, timesheet.year, timesheet.weeks);
   const declDayStr = String(declDate.day).padStart(2, '0');
   const declMonthStr = String(declDate.month).padStart(2, '0');
   const classesLabel = timesheet.classes.join(', ');
+  const agencyName = settings?.agencyName || timesheet.agencyName;
+  const schoolName = settings?.schoolName || timesheet.schoolName;
+  const locationName = settings?.locationName || timesheet.locationName || 'Châu Hưng';
+  const vicePrincipalName = settings ? settings.vicePrincipalName : timesheet.vicePrincipalName || '';
+  const departmentHeadName = settings ? settings.departmentHeadName : timesheet.departmentHeadName || '';
 
   return (
     <div
@@ -33,8 +40,8 @@ export const OfficialTimesheetPrint: React.FC<OfficialTimesheetPrintProps> = ({
       {/* Header Row: Agency / School on left, National Motto on right */}
       <div className="flex justify-between items-start text-[12.5pt] leading-snug">
         <div className="text-center w-[48%]">
-          <div className="uppercase font-normal tracking-tight">{timesheet.agencyName}</div>
-          <div className="uppercase font-bold tracking-tight">{timesheet.schoolName}</div>
+          <div className="uppercase font-normal tracking-tight">{agencyName}</div>
+          <div className="uppercase font-bold tracking-tight">{schoolName}</div>
           <div className="mx-auto mt-1 w-48 border-b border-black" />
         </div>
         <div className="text-center w-[48%]">
@@ -203,17 +210,17 @@ export const OfficialTimesheetPrint: React.FC<OfficialTimesheetPrintProps> = ({
           <div className="font-bold uppercase">DUYỆT CỦA LÃNH ĐẠO</div>
           <div className="font-bold uppercase">PHÓ HIỆU TRƯỞNG</div>
           <div className="h-20" />
-          <div className="font-bold">{timesheet.vicePrincipalName || ''}</div>
+          <div className="font-bold">{vicePrincipalName}</div>
         </div>
         <div>
           <div className="h-5" />
           <div className="font-bold uppercase">TỔ TRƯỞNG</div>
           <div className="h-20" />
-          <div className="font-bold">{timesheet.departmentHeadName || ''}</div>
+          <div className="font-bold">{departmentHeadName}</div>
         </div>
         <div>
           <div className="italic">
-            {timesheet.locationName || 'Châu Hưng'}, ngày {declDayStr} tháng {declMonthStr} năm{' '}
+            {locationName}, ngày {declDayStr} tháng {declMonthStr} năm{' '}
             {declDate.year}
           </div>
           <div className="font-bold uppercase">NGƯỜI KÊ KHAI</div>

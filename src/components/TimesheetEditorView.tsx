@@ -94,7 +94,7 @@ export const TimesheetEditorView: React.FC<TimesheetEditorViewProps> = ({
       teacherEmail: staff?.email || user.email,
       leaderEmail: staff?.leaderEmail,
       department: staff?.department || user.department || 'Tổ Thể dục - QP&AN',
-      schoolName: staff?.schoolName || user.schoolName || settings.schoolName,
+      schoolName: settings.schoolName || staff?.schoolName || user.schoolName || '',
       agencyName: settings.agencyName,
       subject,
       concurrentRole: staff?.concurrentRole ?? user.concurrentRole ?? '',
@@ -136,6 +136,23 @@ export const TimesheetEditorView: React.FC<TimesheetEditorViewProps> = ({
   useEffect(() => {
     setClassesInput(draft.classes.join(', '));
   }, [draft.id]);
+
+  useEffect(() => {
+    setDraft((prev) => ({
+      ...prev,
+      agencyName: settings.agencyName,
+      schoolName: settings.schoolName,
+      locationName: settings.locationName,
+      vicePrincipalName: settings.vicePrincipalName,
+      departmentHeadName: settings.departmentHeadName,
+    }));
+  }, [
+    settings.agencyName,
+    settings.schoolName,
+    settings.locationName,
+    settings.vicePrincipalName,
+    settings.departmentHeadName,
+  ]);
 
   const isLocked = draft.status === 'approved' && user.role !== 'admin';
 
@@ -204,7 +221,8 @@ export const TimesheetEditorView: React.FC<TimesheetEditorViewProps> = ({
         ...prev,
         teacherName: staff.fullName,
         department: staff.department,
-        schoolName: staff.schoolName || settings.schoolName,
+        schoolName: settings.schoolName || staff.schoolName || prev.schoolName,
+        agencyName: settings.agencyName,
         subject: staff.subject,
         concurrentRole: staff.concurrentRole || '',
         classes: staff.classes,
@@ -253,6 +271,11 @@ export const TimesheetEditorView: React.FC<TimesheetEditorViewProps> = ({
       const declDate = getDeclarationDate(draft.month, draft.year, draft.weeks);
       const toSave = recalculateTimesheet({
         ...draft,
+        agencyName: settings.agencyName,
+        schoolName: settings.schoolName,
+        locationName: settings.locationName,
+        vicePrincipalName: settings.vicePrincipalName,
+        departmentHeadName: settings.departmentHeadName,
         signDay: declDate.day,
         status: nextStatus ?? draft.status,
         updatedAt: new Date().toISOString(),
@@ -363,7 +386,7 @@ export const TimesheetEditorView: React.FC<TimesheetEditorViewProps> = ({
 
           <button
             type="button"
-            onClick={() => exportTimesheetToExcel(draft)}
+            onClick={() => exportTimesheetToExcel(draft, settings)}
             className="inline-flex items-center gap-2 rounded-lg border border-slate-300 bg-white px-3.5 py-2 text-xs font-medium text-slate-700 hover:bg-slate-50 transition-colors whitespace-nowrap cursor-pointer"
           >
             <FileSpreadsheet className="w-3.5 h-3.5 text-emerald-700" />
@@ -743,7 +766,7 @@ export const TimesheetEditorView: React.FC<TimesheetEditorViewProps> = ({
 
           <div className="flex-1 overflow-auto p-6 bg-slate-200 print:p-0 print:bg-white">
             <div className="shadow-md print:shadow-none inline-block min-w-full">
-              <OfficialTimesheetPrint timesheet={draft} sheetRef={printRef} />
+              <OfficialTimesheetPrint timesheet={draft} settings={settings} sheetRef={printRef} />
             </div>
           </div>
         </div>

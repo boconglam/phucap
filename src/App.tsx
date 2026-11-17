@@ -161,6 +161,21 @@ export default function App() {
           setSettings(cloudSettings);
           await saveLocalSettings(cloudSettings);
           syncedCount += 1;
+          if (
+            (!currentUser.schoolName ||
+              currentUser.schoolName === DEFAULT_SETTINGS.schoolName ||
+              currentUser.schoolName === settings.schoolName) &&
+            currentUser.schoolName !== cloudSettings.schoolName
+          ) {
+            const updatedProfile: UserProfile = {
+              ...currentUser,
+              schoolName: cloudSettings.schoolName,
+              updatedAt: new Date().toISOString(),
+            };
+            setUser(updatedProfile);
+            localStorage.setItem(`user_profile_${updatedProfile.uid}`, JSON.stringify(updatedProfile));
+            await saveUserProfileCloud(updatedProfile);
+          }
         } else if (isAdminUser) {
           await saveSystemSettingsCloud(settings);
           syncedCount += 1;
@@ -855,14 +870,102 @@ export default function App() {
   };
 
   const handleSaveSettings = async (nextSettings: SystemSettings) => {
+    const prevSettings = settings;
+    const now = new Date().toISOString();
     setSettings(nextSettings);
     await saveLocalSettings(nextSettings);
-    await recordBackupSnapshot('Cập nhật cài đặt hệ thống', nextSettings, personnel, timesheets);
+
+    if (
+      user &&
+      (!user.schoolName ||
+        user.schoolName === prevSettings.schoolName ||
+        user.schoolName === DEFAULT_SETTINGS.schoolName) &&
+      user.schoolName !== nextSettings.schoolName
+    ) {
+      const updatedUser: UserProfile = {
+        ...user,
+        schoolName: nextSettings.schoolName,
+        updatedAt: now,
+      };
+      setUser(updatedUser);
+      localStorage.setItem(`user_profile_${updatedUser.uid}`, JSON.stringify(updatedUser));
+      if (updatedUser.authMode === 'local') {
+        sessionStorage.setItem('local_user_session', JSON.stringify(updatedUser));
+      } else if (navigator.onLine) {
+        await saveUserProfileCloud(updatedUser);
+      }
+    }
+
+    const updatedPersonnel = personnel.map((member) => {
+      const shouldUpdateSchool =
+        !member.schoolName ||
+        member.schoolName === prevSettings.schoolName ||
+        member.schoolName === DEFAULT_SETTINGS.schoolName;
+      if (!shouldUpdateSchool || member.schoolName === nextSettings.schoolName) {
+        return member;
+      }
+      return {
+        ...member,
+        schoolName: nextSettings.schoolName,
+        updatedAt: now,
+      };
+    });
+    const changedPersonnel = updatedPersonnel.filter((m, idx) => m !== personnel[idx]);
+    if (changedPersonnel.length > 0) {
+      setPersonnel(updatedPersonnel);
+      await saveLocalPersonnelList(updatedPersonnel);
+    }
+
+    const updatedTimesheets = timesheets.map((ts) => {
+      if (
+        ts.agencyName === nextSettings.agencyName &&
+        ts.schoolName === nextSettings.schoolName &&
+        ts.locationName === nextSettings.locationName &&
+        ts.vicePrincipalName === nextSettings.vicePrincipalName &&
+        ts.departmentHeadName === nextSettings.departmentHeadName
+      ) {
+        return ts;
+      }
+      return {
+        ...ts,
+        agencyName: nextSettings.agencyName,
+        schoolName: nextSettings.schoolName,
+        locationName: nextSettings.locationName,
+        vicePrincipalName: nextSettings.vicePrincipalName,
+        departmentHeadName: nextSettings.departmentHeadName,
+        updatedAt: now,
+      };
+    });
+    const changedTimesheets = updatedTimesheets.filter((t, idx) => t !== timesheets[idx]);
+    if (changedTimesheets.length > 0) {
+      setTimesheets(updatedTimesheets);
+      await saveLocalTimesheetsList(updatedTimesheets);
+      if (editingTimesheet) {
+        const refreshedEditing = updatedTimesheets.find((t) => t.id === editingTimesheet.id);
+        if (refreshedEditing) {
+          setEditingTimesheet(refreshedEditing);
+        }
+      }
+    }
+
+    await recordBackupSnapshot(
+      'Cập nhật cài đặt hệ thống',
+      nextSettings,
+      updatedPersonnel,
+      updatedTimesheets
+    );
+
     if (user?.authMode === 'google' && navigator.onLine) {
       await saveSystemSettingsCloud(nextSettings);
+      for (const member of changedPersonnel) {
+        await savePersonnelCloud(member);
+      }
+      for (const ts of changedTimesheets) {
+        await saveTimesheetCloud(ts);
+      }
       for (const acc of localAccounts) {
         if (acc.credentialKey) {
-          const staff = personnel.find((p) => p.id === acc.staffId);
+          const staff = updatedPersonnel.find((p) => p.id === acc.staffId);
           if (staff) {
             await saveInternalAccountAndTicketCloud({
               account: acc,
@@ -1027,7 +1130,7 @@ export default function App() {
             <span aria-hidden="true">·</span>
             <span>{user.department || 'Tổ Thể dục - QP&AN'}</span>
             <span aria-hidden="true">·</span>
-            <span>{user.schoolName || settings.schoolName}</span>
+            <span>{settings.schoolName || user.schoolName}</span>
           </div>
           <div className="flex items-center gap-3">
             {isSyncing && (

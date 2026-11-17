@@ -337,7 +337,7 @@ export const SettingsAndBackupView: React.FC<SettingsAndBackupViewProps> = ({
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <div>
             <label className="block text-xs font-medium text-slate-700 mb-1">
-              Tên cơ quan chủ quản (dòng trên cùng bảng kê)
+              Tên Sở GD&amp;ĐT / Cơ quan chủ quản (dòng trên bảng kê)
             </label>
             <input
               type="text"
@@ -350,7 +350,7 @@ export const SettingsAndBackupView: React.FC<SettingsAndBackupViewProps> = ({
           </div>
           <div>
             <label className="block text-xs font-medium text-slate-700 mb-1">
-              Tên trường mặc định
+              Tên trường (áp dụng toàn hệ thống &amp; bảng kê)
             </label>
             <input
               type="text"
