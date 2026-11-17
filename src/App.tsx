@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { onAuthStateChanged, signInWithPopup, signOut } from 'firebase/auth';
-import { LogOut, RefreshCw } from 'lucide-react';
+import { ClipboardList, LayoutDashboard, LogOut, RefreshCw, Settings, Users } from 'lucide-react';
 import { AuthScreen } from './components/AuthScreen';
 import { DashboardView } from './components/DashboardView';
 import { OfflineIndicator, PWAInstallButton } from './components/PWAInstallButton';
@@ -731,8 +731,8 @@ export default function App() {
   return (
     <div className="min-h-screen bg-slate-50 flex flex-col">
       {/* 3-Zone Top Bar Contract */}
-      <header className="no-print bg-white border-b border-slate-200 sticky top-0 z-40">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 h-16 flex items-center justify-between gap-8">
+      <header className="no-print bg-white border-b border-slate-200 md:sticky md:top-0 z-40">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 h-14 md:h-16 flex items-center justify-between gap-4 md:gap-8">
           {/* Zone 1: Single-line Brand Title */}
           <button
             type="button"
@@ -742,8 +742,8 @@ export default function App() {
             Sổ Phụ Cấp Sân Bãi
           </button>
 
-          {/* Zone 2: Clean Text Nav Links */}
-          <nav className="flex items-center gap-6 overflow-x-auto text-sm font-medium">
+          {/* Zone 2: Clean Text Nav Links (Desktop) */}
+          <nav className="hidden md:flex items-center gap-6 text-sm font-medium">
             <button
               type="button"
               onClick={() => setActiveTab('dashboard')}
@@ -800,7 +800,7 @@ export default function App() {
             <button
               type="button"
               onClick={() => void handleLogout()}
-              className="inline-flex items-center gap-2 rounded-lg border border-slate-300 bg-white px-3.5 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-50 transition-colors whitespace-nowrap shrink-0 cursor-pointer"
+              className="inline-flex items-center gap-2 rounded-lg border border-slate-300 bg-white px-3.5 py-2 md:py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-50 transition-colors whitespace-nowrap shrink-0 cursor-pointer"
             >
               <LogOut className="w-3.5 h-3.5" />
               <span>Đăng xuất</span>
@@ -834,7 +834,7 @@ export default function App() {
       </div>
 
       {/* Main Content */}
-      <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 py-8">
+      <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 pt-6 pb-24 md:py-8">
         {activeTab === 'dashboard' && (
           <DashboardView
             user={user}
@@ -903,6 +903,72 @@ export default function App() {
           />
         )}
       </main>
+
+      {/* Mobile Bottom Navigation Bar */}
+      <nav
+        aria-label="Điều hướng chính"
+        className="no-print md:hidden fixed bottom-0 left-0 right-0 z-40 bg-white/95 backdrop-blur-md border-t border-slate-200"
+      >
+        <div
+          className={`grid ${
+            canViewPersonnel ? 'grid-cols-4' : 'grid-cols-3'
+          } items-center h-16`}
+        >
+          <button
+            type="button"
+            onClick={() => setActiveTab('dashboard')}
+            className={`min-h-[44px] h-full flex flex-col items-center justify-center gap-1 border-t-2 transition-colors cursor-pointer ${
+              activeTab === 'dashboard'
+                ? 'border-emerald-800 text-emerald-900 font-semibold'
+                : 'border-transparent text-slate-500 hover:text-slate-900'
+            }`}
+          >
+            <LayoutDashboard className="w-5 h-5" />
+            <span className="text-[11px] leading-none whitespace-nowrap">Tổng quan</span>
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              setEditingTimesheet(null);
+              setActiveTab('editor');
+            }}
+            className={`min-h-[44px] h-full flex flex-col items-center justify-center gap-1 border-t-2 transition-colors cursor-pointer ${
+              activeTab === 'editor'
+                ? 'border-emerald-800 text-emerald-900 font-semibold'
+                : 'border-transparent text-slate-500 hover:text-slate-900'
+            }`}
+          >
+            <ClipboardList className="w-5 h-5" />
+            <span className="text-[11px] leading-none whitespace-nowrap">Bảng kê</span>
+          </button>
+          {canViewPersonnel && (
+            <button
+              type="button"
+              onClick={() => setActiveTab('personnel')}
+              className={`min-h-[44px] h-full flex flex-col items-center justify-center gap-1 border-t-2 transition-colors cursor-pointer ${
+                activeTab === 'personnel'
+                  ? 'border-emerald-800 text-emerald-900 font-semibold'
+                  : 'border-transparent text-slate-500 hover:text-slate-900'
+              }`}
+            >
+              <Users className="w-5 h-5" />
+              <span className="text-[11px] leading-none whitespace-nowrap">Nhân sự</span>
+            </button>
+          )}
+          <button
+            type="button"
+            onClick={() => setActiveTab('settings')}
+            className={`min-h-[44px] h-full flex flex-col items-center justify-center gap-1 border-t-2 transition-colors cursor-pointer ${
+              activeTab === 'settings'
+                ? 'border-emerald-800 text-emerald-900 font-semibold'
+                : 'border-transparent text-slate-500 hover:text-slate-900'
+            }`}
+          >
+            <Settings className="w-5 h-5" />
+            <span className="text-[11px] leading-none whitespace-nowrap">Cài đặt</span>
+          </button>
+        </div>
+      </nav>
 
       <OfflineIndicator />
     </div>

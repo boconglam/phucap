@@ -68,7 +68,7 @@ export const OfflineIndicator: React.FC = () => {
   if (isOnline) return null;
 
   return (
-    <div className="no-print fixed bottom-4 left-4 z-50 flex items-center gap-2 rounded-lg bg-amber-700 px-3.5 py-2 text-xs font-medium text-white shadow-sm">
+    <div className="no-print fixed bottom-20 md:bottom-4 left-4 right-4 sm:right-auto z-50 flex items-center gap-2 rounded-lg bg-amber-700 px-3.5 py-2 text-xs font-medium text-white shadow-sm">
       <WifiOff className="w-3.5 h-3.5 shrink-0" />
       <span>Chế độ ngoại tuyến — Dữ liệu được lưu cục bộ và sẽ tự đồng bộ khi có mạng.</span>
     </div>
