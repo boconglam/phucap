@@ -1,0 +1,324 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // 1. Global Default-Deny Safety Net
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // 2. Hardened Global Helpers
+    function isValidId(id) {
+      return id is string && id.size() >= 1 && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isVerified() {
+      return isSignedIn() && request.auth.token.email_verified == true;
+    }
+
+    function isBootstrappedAdmin() {
+      return isVerified() && request.auth.token.email == 'boconglam@gmail.com';
+    }
+
+    function isAdmin() {
+      return isBootstrappedAdmin() || (
+        isVerified() && exists(/databases/$(database)/documents/admins/$(request.auth.uid))
+      );
+    }
+
+    function isValidSubject(subject) {
+      return subject is string && (
+        subject == 'Giáo dục Thể chất' ||
+        subject == 'Giáo dục Quốc phòng An ninh'
+      );
+    }
+
+    function isValidRole(role) {
+      return role is string && (role == 'admin' || role == 'leader' || role == 'teacher');
+    }
+
+    function isValidTimesheetStatus(status) {
+      return status is string && (status == 'draft' || status == 'submitted' || status == 'approved');
+    }
+
+    function isValidStringList(arr, maxLen) {
+      return arr is list && arr.size() <= maxLen && (arr.size() == 0 || (arr[0] is string && arr[0].size() <= 64));
+    }
+
+    // 3. Entity Validation Blueprints
+    function isValidSystemSettings(data) {
+      return data.keys().hasAll([
+        'id', 'agencyName', 'schoolName', 'locationName',
+        'defaultRatePerPeriod', 'schoolYearStart', 'tetReturnDate',
+        'reminderDayOfMonth', 'updatedBy', 'updatedAt'
+      ]) &&
+      data.keys().hasOnly([
+        'id', 'agencyName', 'schoolName', 'locationName',
+        'vicePrincipalName', 'departmentHeadName',
+        'defaultRatePerPeriod', 'schoolYearStart', 'tetReturnDate',
+        'reminderDayOfMonth', 'updatedBy', 'updatedAt'
+      ]) &&
+      isValidId(data.id) &&
+      data.agencyName is string && data.agencyName.size() >= 1 && data.agencyName.size() <= 200 &&
+      data.schoolName is string && data.schoolName.size() >= 1 && data.schoolName.size() <= 200 &&
+      data.locationName is string && data.locationName.size() >= 1 && data.locationName.size() <= 100 &&
+      (!('vicePrincipalName' in data) || (data.vicePrincipalName is string && data.vicePrincipalName.size() <= 100)) &&
+      (!('departmentHeadName' in data) || (data.departmentHeadName is string && data.departmentHeadName.size() <= 100)) &&
+      data.defaultRatePerPeriod is number && data.defaultRatePerPeriod >= 0 && data.defaultRatePerPeriod <= 10000000 &&
+      data.schoolYearStart is string && data.schoolYearStart.size() <= 20 &&
+      data.tetReturnDate is string && data.tetReturnDate.size() <= 20 &&
+      data.reminderDayOfMonth is number && data.reminderDayOfMonth >= 1 && data.reminderDayOfMonth <= 31 &&
+      data.updatedBy is string && data.updatedBy.size() <= 128 &&
+      data.updatedAt is timestamp;
+    }
+
+    function isValidUserProfile(data) {
+      return data.keys().hasAll(['uid', 'email', 'displayName', 'role', 'updatedAt']) &&
+      data.keys().hasOnly([
+        'uid', 'email', 'displayName', 'schoolName', 'department',
+        'position', 'subject', 'concurrentRole', 'staffId', 'role', 'updatedAt'
+      ]) &&
+      isValidId(data.uid) &&
+      data.email is string && data.email.size() >= 3 && data.email.size() <= 150 &&
+      data.displayName is string && data.displayName.size() >= 1 && data.displayName.size() <= 120 &&
+      (!('schoolName' in data) || (data.schoolName is string && data.schoolName.size() <= 200)) &&
+      (!('department' in data) || (data.department is string && data.department.size() <= 120)) &&
+      (!('position' in data) || (data.position is string && data.position.size() <= 100)) &&
+      (!('subject' in data) || (data.subject is string && data.subject.size() <= 100)) &&
+      (!('concurrentRole' in data) || (data.concurrentRole is string && data.concurrentRole.size() <= 150)) &&
+      (!('staffId' in data) || (data.staffId is string && data.staffId.size() <= 128)) &&
+      isValidRole(data.role) &&
+      data.updatedAt is timestamp;
+    }
+
+    function isValidPersonnel(data) {
+      return data.keys().hasAll([
+        'id', 'fullName', 'email', 'role', 'position', 'department',
+        'subject', 'classes', 'ratePerPeriod', 'isActive', 'createdAt', 'updatedAt'
+      ]) &&
+      data.keys().hasOnly([
+        'id', 'fullName', 'email', 'leaderEmail', 'username', 'role', 'position',
+        'department', 'schoolName', 'subject', 'concurrentRole',
+        'classes', 'ratePerPeriod', 'isActive', 'linkedUid', 'createdAt', 'updatedAt'
+      ]) &&
+      isValidId(data.id) &&
+      data.fullName is string && data.fullName.size() >= 1 && data.fullName.size() <= 120 &&
+      data.email is string && data.email.size() <= 150 &&
+      (!('leaderEmail' in data) || (data.leaderEmail is string && data.leaderEmail.size() <= 150)) &&
+      (!('username' in data) || (data.username is string && data.username.size() <= 80)) &&
+      isValidRole(data.role) &&
+      data.position is string && data.position.size() <= 100 &&
+      data.department is string && data.department.size() <= 120 &&
+      (!('schoolName' in data) || (data.schoolName is string && data.schoolName.size() <= 200)) &&
+      isValidSubject(data.subject) &&
+      (!('concurrentRole' in data) || (data.concurrentRole is string && data.concurrentRole.size() <= 150)) &&
+      isValidStringList(data.classes, 30) &&
+      data.ratePerPeriod is number && data.ratePerPeriod >= 0 && data.ratePerPeriod <= 10000000 &&
+      data.isActive is bool &&
+      (!('linkedUid' in data) || (data.linkedUid is string && data.linkedUid.size() <= 128)) &&
+      data.createdAt is timestamp &&
+      data.updatedAt is timestamp;
+    }
+
+    function isValidTimesheet(data) {
+      return data.keys().hasAll([
+        'id', 'ownerUid', 'staffId', 'teacherName', 'teacherEmail',
+        'department', 'schoolName', 'agencyName', 'subject', 'classes',
+        'assignedPeriodsPerWeek', 'ratePerPeriod', 'month', 'year',
+        'totalStandardPeriods', 'totalTaughtPeriods', 'totalAllowancePeriods',
+        'totalAmount', 'status', 'weeks', 'createdAt', 'updatedAt'
+      ]) &&
+      data.keys().hasOnly([
+        'id', 'ownerUid', 'staffId', 'teacherName', 'teacherEmail', 'leaderEmail',
+        'department', 'schoolName', 'agencyName', 'subject', 'concurrentRole',
+        'classes', 'assignedPeriodsPerWeek', 'ratePerPeriod', 'month', 'year',
+        'totalStandardPeriods', 'totalTaughtPeriods', 'totalAllowancePeriods',
+        'totalAmount', 'status', 'weeks', 'locationName', 'signDay',
+        'vicePrincipalName', 'departmentHeadName', 'createdAt', 'updatedAt'
+      ]) &&
+      isValidId(data.id) &&
+      isValidId(data.ownerUid) &&
+      isValidId(data.staffId) &&
+      data.teacherName is string && data.teacherName.size() >= 1 && data.teacherName.size() <= 120 &&
+      data.teacherEmail is string && data.teacherEmail.size() <= 150 &&
+      (!('leaderEmail' in data) || (data.leaderEmail is string && data.leaderEmail.size() <= 150)) &&
+      data.department is string && data.department.size() <= 120 &&
+      data.schoolName is string && data.schoolName.size() <= 200 &&
+      data.agencyName is string && data.agencyName.size() <= 200 &&
+      isValidSubject(data.subject) &&
+      (!('concurrentRole' in data) || (data.concurrentRole is string && data.concurrentRole.size() <= 150)) &&
+      isValidStringList(data.classes, 30) &&
+      data.assignedPeriodsPerWeek is number && data.assignedPeriodsPerWeek >= 0 && data.assignedPeriodsPerWeek <= 100 &&
+      data.ratePerPeriod is number && data.ratePerPeriod >= 0 && data.ratePerPeriod <= 10000000 &&
+      data.month is number && data.month >= 1 && data.month <= 12 &&
+      data.year is number && data.year >= 2020 && data.year <= 2100 &&
+      data.totalStandardPeriods is number && data.totalStandardPeriods >= 0 && data.totalStandardPeriods <= 500 &&
+      data.totalTaughtPeriods is number && data.totalTaughtPeriods >= 0 && data.totalTaughtPeriods <= 500 &&
+      data.totalAllowancePeriods is number && data.totalAllowancePeriods >= 0 && data.totalAllowancePeriods <= 500 &&
+      data.totalAmount is number && data.totalAmount >= 0 && data.totalAmount <= 500000000 &&
+      isValidTimesheetStatus(data.status) &&
+      data.weeks is list && data.weeks.size() <= 6 && (data.weeks.size() == 0 || data.weeks[0] is map) &&
+      (!('locationName' in data) || (data.locationName is string && data.locationName.size() <= 100)) &&
+      (!('signDay' in data) || (data.signDay is number && data.signDay >= 1 && data.signDay <= 31)) &&
+      (!('vicePrincipalName' in data) || (data.vicePrincipalName is string && data.vicePrincipalName.size() <= 100)) &&
+      (!('departmentHeadName' in data) || (data.departmentHeadName is string && data.departmentHeadName.size() <= 100)) &&
+      data.createdAt is timestamp &&
+      data.updatedAt is timestamp;
+    }
+
+    function isValidAdminMarker(data) {
+      return data.keys().hasAll(['uid', 'email', 'createdAt']) &&
+      data.keys().hasOnly(['uid', 'email', 'createdAt']) &&
+      isValidId(data.uid) &&
+      data.email is string && data.email.size() >= 3 && data.email.size() <= 150 &&
+      data.createdAt is timestamp;
+    }
+
+    // 4. Collection Rules
+    match /admins/{adminId} {
+      allow get: if isVerified() && isValidId(adminId) && (request.auth.uid == adminId || isAdmin());
+      allow list: if isBootstrappedAdmin();
+      allow create: if isAdmin() && isValidId(adminId) && isValidAdminMarker(incoming()) &&
+        incoming().uid == adminId && incoming().createdAt == request.time;
+      allow update: if false;
+      allow delete: if isAdmin() && isValidId(adminId) && adminId != request.auth.uid;
+    }
+
+    match /system_settings/{schoolId} {
+      allow get: if isVerified() && isValidId(schoolId);
+      allow list: if isVerified() && resource.data.id == 'default';
+      allow create: if isAdmin() && isValidId(schoolId) && isValidSystemSettings(incoming()) &&
+        incoming().id == schoolId && incoming().updatedBy == request.auth.uid && incoming().updatedAt == request.time;
+      allow update: if isAdmin() && isValidId(schoolId) && isValidSystemSettings(incoming()) &&
+        incoming().id == existing().id && incoming().updatedBy == request.auth.uid && incoming().updatedAt == request.time &&
+        incoming().diff(existing()).affectedKeys().hasOnly([
+          'agencyName', 'schoolName', 'locationName', 'vicePrincipalName', 'departmentHeadName',
+          'defaultRatePerPeriod', 'schoolYearStart', 'tetReturnDate', 'reminderDayOfMonth',
+          'updatedBy', 'updatedAt'
+        ]);
+      allow delete: if false;
+    }
+
+    match /users/{userId} {
+      allow get: if isVerified() && isValidId(userId) && (request.auth.uid == userId || isAdmin());
+      allow list: if isBootstrappedAdmin();
+      allow create: if isVerified() && isValidId(userId) && isValidUserProfile(incoming()) &&
+        incoming().uid == userId &&
+        incoming().updatedAt == request.time &&
+        (
+          (request.auth.uid == userId && incoming().role == 'teacher' && incoming().email == request.auth.token.email) ||
+          isAdmin()
+        );
+      allow update: if isVerified() && isValidId(userId) && isValidUserProfile(incoming()) &&
+        incoming().uid == existing().uid &&
+        incoming().updatedAt == request.time &&
+        (
+          isAdmin() ||
+          (
+            request.auth.uid == userId &&
+            incoming().role == existing().role &&
+            incoming().email == existing().email &&
+            incoming().diff(existing()).affectedKeys().hasOnly([
+              'displayName', 'schoolName', 'department', 'position',
+              'subject', 'concurrentRole', 'staffId', 'updatedAt'
+            ])
+          )
+        );
+      allow delete: if isAdmin() && isValidId(userId);
+    }
+
+    match /personnel/{staffId} {
+      allow get: if isVerified() && isValidId(staffId) && (
+        isAdmin() ||
+        existing().email == request.auth.token.email ||
+        existing().leaderEmail == request.auth.token.email ||
+        existing().linkedUid == request.auth.uid
+      );
+      allow list: if isVerified() && (
+        isBootstrappedAdmin() ||
+        resource.data.email == request.auth.token.email ||
+        resource.data.leaderEmail == request.auth.token.email ||
+        resource.data.linkedUid == request.auth.uid
+      );
+      allow create: if isAdmin() && isValidId(staffId) && isValidPersonnel(incoming()) &&
+        incoming().id == staffId &&
+        incoming().createdAt == request.time &&
+        incoming().updatedAt == request.time;
+      allow update: if isAdmin() && isValidId(staffId) && isValidPersonnel(incoming()) &&
+        incoming().id == existing().id &&
+        incoming().createdAt == existing().createdAt &&
+        incoming().updatedAt == request.time &&
+        incoming().diff(existing()).affectedKeys().hasOnly([
+          'fullName', 'email', 'leaderEmail', 'username', 'role', 'position', 'department',
+          'schoolName', 'subject', 'concurrentRole', 'classes', 'ratePerPeriod',
+          'isActive', 'linkedUid', 'updatedAt'
+        ]);
+      allow delete: if isAdmin() && isValidId(staffId);
+    }
+
+    match /timesheets/{timesheetId} {
+      allow get: if isVerified() && isValidId(timesheetId) && (
+        isAdmin() ||
+        existing().ownerUid == request.auth.uid ||
+        existing().teacherEmail == request.auth.token.email ||
+        existing().leaderEmail == request.auth.token.email
+      );
+      allow list: if isVerified() && (
+        isBootstrappedAdmin() ||
+        resource.data.ownerUid == request.auth.uid ||
+        resource.data.teacherEmail == request.auth.token.email ||
+        resource.data.leaderEmail == request.auth.token.email
+      );
+      allow create: if isVerified() && isValidId(timesheetId) && isValidTimesheet(incoming()) &&
+        incoming().id == timesheetId &&
+        incoming().createdAt == request.time &&
+        incoming().updatedAt == request.time &&
+        (
+          isAdmin() ||
+          (incoming().ownerUid == request.auth.uid && incoming().status == 'draft')
+        );
+      allow update: if isVerified() && isValidId(timesheetId) && isValidTimesheet(incoming()) &&
+        incoming().id == existing().id &&
+        incoming().ownerUid == existing().ownerUid &&
+        incoming().staffId == existing().staffId &&
+        incoming().createdAt == existing().createdAt &&
+        incoming().updatedAt == request.time &&
+        (
+          isAdmin() ||
+          (
+            existing().leaderEmail == request.auth.token.email &&
+            existing().status != 'approved' &&
+            incoming().diff(existing()).affectedKeys().hasOnly(['status', 'updatedAt'])
+          ) ||
+          (
+            (existing().ownerUid == request.auth.uid || existing().teacherEmail == request.auth.token.email) &&
+            existing().status != 'approved' &&
+            incoming().status != 'approved' &&
+            incoming().diff(existing()).affectedKeys().hasOnly([
+              'teacherName', 'department', 'schoolName', 'agencyName',
+              'subject', 'concurrentRole', 'classes', 'assignedPeriodsPerWeek',
+              'ratePerPeriod', 'totalStandardPeriods', 'totalTaughtPeriods',
+              'totalAllowancePeriods', 'totalAmount', 'status', 'weeks',
+              'locationName', 'signDay', 'vicePrincipalName', 'departmentHeadName',
+              'updatedAt'
+            ])
+          )
+        );
+      allow delete: if isVerified() && isValidId(timesheetId) && (
+        isAdmin() ||
+        (existing().ownerUid == request.auth.uid && existing().status == 'draft')
+      );
+    }
+  }
+}

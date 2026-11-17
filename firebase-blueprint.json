@@ -1,0 +1,137 @@
+{
+  "entities": {
+    "SystemSettings": {
+      "title": "SystemSettings",
+      "description": "Cấu hình chung của cơ quan chủ quản, trường học, định mức phụ cấp và lịch năm học.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 64, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "agencyName": { "type": "string", "minLength": 1, "maxLength": 200 },
+        "schoolName": { "type": "string", "minLength": 1, "maxLength": 200 },
+        "locationName": { "type": "string", "minLength": 1, "maxLength": 100 },
+        "vicePrincipalName": { "type": "string", "maxLength": 100 },
+        "departmentHeadName": { "type": "string", "maxLength": 100 },
+        "defaultRatePerPeriod": { "type": "number" },
+        "schoolYearStart": { "type": "string", "maxLength": 20 },
+        "tetReturnDate": { "type": "string", "maxLength": 20 },
+        "reminderDayOfMonth": { "type": "number" },
+        "updatedBy": { "type": "string", "maxLength": 128 },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "agencyName", "schoolName", "locationName", "defaultRatePerPeriod", "schoolYearStart", "tetReturnDate", "reminderDayOfMonth", "updatedBy", "updatedAt"]
+    },
+    "UserProfile": {
+      "title": "UserProfile",
+      "description": "Hồ sơ tài khoản người dùng và cấu hình trường/tổ chuyên môn.",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string", "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "email": { "type": "string", "maxLength": 150 },
+        "displayName": { "type": "string", "minLength": 1, "maxLength": 120 },
+        "schoolName": { "type": "string", "maxLength": 200 },
+        "department": { "type": "string", "maxLength": 120 },
+        "position": { "type": "string", "maxLength": 100 },
+        "subject": { "type": "string", "maxLength": 100 },
+        "concurrentRole": { "type": "string", "maxLength": 150 },
+        "staffId": { "type": "string", "maxLength": 128 },
+        "role": { "type": "string", "enum": ["admin", "leader", "teacher"] },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["uid", "email", "displayName", "role", "updatedAt"]
+    },
+    "Personnel": {
+      "title": "Personnel",
+      "description": "Danh sách nhân sự giáo viên Thể chất và Quốc phòng An ninh được phân quyền.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "fullName": { "type": "string", "minLength": 1, "maxLength": 120 },
+        "email": { "type": "string", "maxLength": 150 },
+        "leaderEmail": { "type": "string", "maxLength": 150 },
+        "username": { "type": "string", "maxLength": 80 },
+        "role": { "type": "string", "enum": ["admin", "leader", "teacher"] },
+        "position": { "type": "string", "maxLength": 100 },
+        "department": { "type": "string", "maxLength": 120 },
+        "schoolName": { "type": "string", "maxLength": 200 },
+        "subject": { "type": "string", "enum": ["Giáo dục Thể chất", "Giáo dục Quốc phòng An ninh"] },
+        "concurrentRole": { "type": "string", "maxLength": 150 },
+        "classes": { "type": "array" },
+        "ratePerPeriod": { "type": "number" },
+        "isActive": { "type": "boolean" },
+        "linkedUid": { "type": "string", "maxLength": 128 },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "fullName", "email", "role", "position", "department", "subject", "classes", "ratePerPeriod", "isActive", "createdAt", "updatedAt"]
+    },
+    "Timesheet": {
+      "title": "Timesheet",
+      "description": "Bảng kê phụ cấp dạy ngoài trời hàng tháng theo từng giáo viên.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "ownerUid": { "type": "string", "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "staffId": { "type": "string", "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "teacherName": { "type": "string", "minLength": 1, "maxLength": 120 },
+        "teacherEmail": { "type": "string", "maxLength": 150 },
+        "leaderEmail": { "type": "string", "maxLength": 150 },
+        "department": { "type": "string", "maxLength": 120 },
+        "schoolName": { "type": "string", "maxLength": 200 },
+        "agencyName": { "type": "string", "maxLength": 200 },
+        "subject": { "type": "string", "enum": ["Giáo dục Thể chất", "Giáo dục Quốc phòng An ninh"] },
+        "concurrentRole": { "type": "string", "maxLength": 150 },
+        "classes": { "type": "array" },
+        "assignedPeriodsPerWeek": { "type": "number" },
+        "ratePerPeriod": { "type": "number" },
+        "month": { "type": "number" },
+        "year": { "type": "number" },
+        "totalStandardPeriods": { "type": "number" },
+        "totalTaughtPeriods": { "type": "number" },
+        "totalAllowancePeriods": { "type": "number" },
+        "totalAmount": { "type": "number" },
+        "status": { "type": "string", "enum": ["draft", "submitted", "approved"] },
+        "weeks": { "type": "array" },
+        "locationName": { "type": "string", "maxLength": 100 },
+        "signDay": { "type": "number" },
+        "vicePrincipalName": { "type": "string", "maxLength": 100 },
+        "departmentHeadName": { "type": "string", "maxLength": 100 },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "ownerUid", "staffId", "teacherName", "teacherEmail", "department", "schoolName", "agencyName", "subject", "classes", "assignedPeriodsPerWeek", "ratePerPeriod", "month", "year", "totalStandardPeriods", "totalTaughtPeriods", "totalAllowancePeriods", "totalAmount", "status", "weeks", "createdAt", "updatedAt"]
+    },
+    "AdminMarker": {
+      "title": "AdminMarker",
+      "description": "Đánh dấu tài khoản quản trị viên hệ thống.",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string", "maxLength": 128 },
+        "email": { "type": "string", "maxLength": 150 },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["uid", "email", "createdAt"]
+    }
+  },
+  "firestore": {
+    "/system_settings/{schoolId}": {
+      "schema": { "$ref": "#/entities/SystemSettings" },
+      "description": "Cài đặt chung toàn trường và lịch năm học."
+    },
+    "/users/{userId}": {
+      "schema": { "$ref": "#/entities/UserProfile" },
+      "description": "Thông tin hồ sơ người dùng riêng tư."
+    },
+    "/personnel/{staffId}": {
+      "schema": { "$ref": "#/entities/Personnel" },
+      "description": "Danh sách nhân sự giáo viên và phân quyền."
+    },
+    "/timesheets/{timesheetId}": {
+      "schema": { "$ref": "#/entities/Timesheet" },
+      "description": "Bảng kê phụ cấp tiết dạy ngoài trời hàng tháng."
+    },
+    "/admins/{adminId}": {
+      "schema": { "$ref": "#/entities/AdminMarker" },
+      "description": "Danh sách UID quản trị viên hệ thống."
+    }
+  }
+}
